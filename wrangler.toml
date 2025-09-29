@@ -2,12 +2,14 @@ name = "psynex-exam"
 main = "src/index.ts"
 compatibility_date = "2025-07-18"
 workers_dev = true
+account_id = "169f8b1691604f746368e13b2d75dbc1"
+
 
 [[kv_namespaces]]
 binding = "TAXO"
-id = "d37f216a7880402baecb0ea71e3b189b"   # همینی که خودت داری
+id = "d37f216a7880402baebc0ea71e3b189b"   # همینی که خودت داری
 
 [[kv_namespaces]]
 binding = "DATA"
-id = "4e7f07f4153214fd818cd00e53a18b7"    # همینی که خودت داری
+id = "4e7f0f74153241fd818cd00be53a18b7"    # همینی که خودت داری
 
