@@ -52,3 +52,29 @@ export async function deleteQuestion(env: any, type: QuestionType, id: string): 
   await env.DATA.delete(prefix(type) + id);
   return true;
 }
+
+export async function queryRandomQuestion(
+  env: any,
+  type: QuestionType,
+  filters: Partial<Pick<Question, "majorId"|"degreeId"|"ministryId"|"examYearId"|"courseId"|"sourceId"|"chapterId">>,
+  scanLimit = 300
+): Promise<Question | null> {
+  const { keys } = await env.DATA.list({ prefix: prefix(type), limit: scanLimit });
+  const picks: Question[] = [];
+  for (const k of keys) {
+    const raw = await env.DATA.get(k.name);
+    if (!raw) continue;
+    const q: Question = JSON.parse(raw);
+    if (filters.majorId && String(q.majorId) !== String(filters.majorId)) continue;
+    if (filters.degreeId && String(q.degreeId || "") !== String(filters.degreeId)) continue;
+    if (filters.ministryId && String(q.ministryId || "") !== String(filters.ministryId)) continue;
+    if (filters.examYearId && String(q.examYearId || "") !== String(filters.examYearId)) continue;
+    if (filters.courseId && String(q.courseId) !== String(filters.courseId)) continue;
+    if (filters.sourceId && String(q.sourceId || "") !== String(filters.sourceId)) continue;
+    if (filters.chapterId && String(q.chapterId || "") !== String(filters.chapterId)) continue;
+    picks.push(q);
+  }
+  if (!picks.length) return null;
+  return picks[Math.floor(Math.random() * picks.length)];
+}
+
