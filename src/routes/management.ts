@@ -1,12 +1,15 @@
 import { html, json, page } from "../lib/http";
+// توجه: loadTaxonomy فقط در APIهای خاص استفاده می‌شود، صفحه /management/taxonomy بدون نیاز به env هم رندر می‌شود.
 import { loadTaxonomy } from "../lib/taxonomyStore";
 
 export function routeManagement(req: Request, url: URL, env: any): Response | null {
-  if (url.pathname === "/api/management/ping") {
+  const p = url.pathname;
+
+  if (p === "/api/management/ping") {
     return json({ ok: true, role: "manager", ts: Date.now() });
   }
 
-  if (url.pathname === "/management") {
+  if (p === "/management") {
     const body = `
       <h1>مدیریت کاربران</h1>
       <div class="card">لیست کاربران، افزودن، ویرایش، حذف، تعیین پلن (بعدا).</div>
@@ -15,7 +18,8 @@ export function routeManagement(req: Request, url: URL, env: any): Response | nu
     return html(page("مدیریت", body));
   }
 
-  if (url.pathname === "/management/taxonomy") {
+  // هر دو حالت با و بدون اسلش پایانی
+  if (p === "/management/taxonomy" || p === "/management/taxonomy/") {
     const body = `
       <h1>ویرایش تاکسونومی</h1>
       <p class="muted">برای ذخیره باید توکن مدیریتی را وارد کنی. این توکن را در Settings → Variables به نام ADMIN_TOKEN گذاشتی.</p>
@@ -66,8 +70,8 @@ export function routeManagement(req: Request, url: URL, env: any): Response | nu
     return html(page("ویرایش تاکسونومی", body));
   }
 
-  // نمونه: پر کردن اولیه در صورت نیاز (فقط خواندن)
-  if (url.pathname === "/api/management/taxonomy-snapshot") {
+  // نمونه: اسنپ‌شات
+  if (p === "/api/management/taxonomy-snapshot") {
     return (async () => json({ ok: true, data: await loadTaxonomy(env) }))();
   }
 
