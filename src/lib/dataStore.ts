@@ -118,4 +118,99 @@ export async function getRating(env: any, qid: string): Promise<{quality?: numbe
   };
 }
 
+// -------- Challenges --------
+export type ClientQStats = {
+  qid: string;
+  type: QuestionType;
+  wrong: number;
+  correct: number;
+  lastAt: number;
+};
+
+// کلید شمارنده نمایش چالشی
+const chlgKey = (clientId: string, qid: string) => `chlg:${clientId}:${qid}`;
+
+// لیست همه پاسخ‌های یک کاربر (بر اساس clientId)
+export async function listAnswersByClient(env: any, clientId: string, scanLimit = 2000): Promise<StudentAnswerLog[]> {
+  const { keys } = await env.DATA.list({ prefix: `ans:${clientId}:`, limit: scanLimit });
+  const out: StudentAnswerLog[] = [];
+  for (const k of keys) {
+    const raw = await env.DATA.get(k.name);
+    if (raw) out.push(JSON.parse(raw));
+  }
+  return out;
+}
+
+// ساخت آمار درست/غلط برای هر سؤالِ یک کاربر
+export async function buildClientStats(env: any, clientId: string): Promise<Map<string, ClientQStats>> {
+  const logs = await listAnswersByClient(env, clientId);
+  const map = new Map<string, ClientQStats>();
+  for (const lg of logs) {
+    const key = `${lg.type}:${lg.qid}`;
+    const cur = map.get(key) || { qid: lg.qid, type: lg.type, wrong: 0, correct: 0, lastAt: 0 };
+    if (lg.correct) cur.correct += 1; else cur.wrong += 1;
+    if (lg.at > cur.lastAt) cur.lastAt = lg.at;
+    map.set(key, cur);
+  }
+  return map;
+}
+
+async function getServeCount(env: any, clientId: string, qid: string): Promise<number> {
+  const raw = await env.DATA.get(chlgKey(clientId, qid));
+  return raw ? Number(raw) || 0 : 0;
+}
+async function incServeCount(env: any, clientId: string, qid: string): Promise<void> {
+  const n = (await getServeCount(env, clientId, qid)) + 1;
+  await env.DATA.put(chlgKey(clientId, qid), String(n));
+}
+
+// انتخاب بهترین کاندید چالش با فیلترهای اختیاری
+export async function chooseChallengeQuestion(
+  env: any,
+  clientId: string,
+  filters: Partial<Pick<Question, "majorId"|"courseId"|"degreeId"|"ministryId"|"examYearId"|"sourceId"|"chapterId">> = {},
+  typeFilter: QuestionType | null = null
+): Promise<Question | null> {
+  const stats = await buildClientStats(env, clientId);  // فقط سؤال‌هایی که قبلاً پاسخ داده شده‌اند
+  const candidates: Array<{q: Question, st: ClientQStats, served: number}> = [];
+
+  // برای هر سؤالِ دیده‌شده کاربر، اگر حداقل یک بار غلط داشته باشد و کمتر از 5 بار به‌عنوان چالش نشان داده شده باشد، بررسیش می‌کنیم
+  for (const [key, st] of stats.entries()) {
+    if (st.wrong <= 0) continue;
+    const served = await getServeCount(env, clientId, st.qid);
+    if (served >= 5) continue; // تا ۵ بار
+    if (typeFilter && st.type !== typeFilter) continue;
+
+    // سوال کامل را بگیر تا فیلترهای انتخابی را چک کنیم
+    const q = await getQuestion(env, st.type, st.qid);
+    if (!q) continue;
+
+    // فیلترها (رشته اجباری در UI خواهد بود، بقیه اختیاری)
+    const eq = (a?: string|number, b?: string|number) => (b == null || b === "" ? true : String(a||"") === String(b));
+    if (!eq(q.majorId,     filters.majorId)) continue;
+    if (!eq(q.courseId,    filters.courseId)) continue;
+    if (!eq(q.degreeId,    filters.degreeId)) continue;
+    if (!eq(q.ministryId,  filters.ministryId)) continue;
+    if (!eq(q.examYearId,  filters.examYearId)) continue;
+    if (!eq(q.sourceId,    filters.sourceId)) continue;
+    if (!eq(q.chapterId,   filters.chapterId)) continue;
+
+    candidates.push({ q, st, served });
+  }
+
+  if (!candidates.length) return null;
+
+  // مرتب‌سازی: اول کمتر نمایش‌داده‌شده، بعد قدیمی‌تر (lastAt کوچکتر)، بعد بیشتر-غلط
+  candidates.sort((a, b) => {
+    if (a.served !== b.served) return a.served - b.served;
+    if (a.st.lastAt !== b.st.lastAt) return a.st.lastAt - b.st.lastAt;
+    return b.st.wrong - a.st.wrong;
+  });
+
+  const chosen = candidates[0];
+  await incServeCount(env, clientId, chosen.q.id);
+  return chosen.q;
+}
+
+
 
