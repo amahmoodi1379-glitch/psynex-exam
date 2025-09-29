@@ -13,11 +13,12 @@ export default {
       return html(page("خانه", body));
     }
 
+    // ترتیب مهم است. هر روت اگر مچ نشود باید null برگرداند.
     return (
       routeAdmin(req, url) ??
       routeStudent(req, url) ??
-      routeManagement(req, url, env) ??
-      routeTaxonomy(req, url, env) ??
+      routeManagement(req, url, env) ??  // حتما env را پاس بده
+      routeTaxonomy(req, url, env) ??    // حتما env را پاس بده
       html(page("یافت نشد", "<h1>404</h1>"), 404)
     );
   }
