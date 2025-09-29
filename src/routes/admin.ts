@@ -246,3 +246,4 @@ function formHtml(action: string, withOptions: boolean, root: "k"|"t"|"q") {
     <button type="submit">ثبت</button>
   </form>`;
 }
+
