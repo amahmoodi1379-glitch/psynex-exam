@@ -9,6 +9,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
     return (async () => {
       const type = (url.searchParams.get("type") || "konkur") as "konkur"|"talifi"|"qa";
       const fd = await req.formData();
+
       const base = {
         type,
         majorId: String(fd.get("majorId") || ""),
@@ -34,7 +35,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
 
       if (!env || !env.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
       const id = await createQuestion(env, base);
-      return json({ ok: true, id });
+      return json({ ok: true, id, type });
     })();
   }
 
@@ -56,45 +57,50 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
       if (!id) return json({ ok: false, error: "id required" }, 400);
       if (!env || !env.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
       await deleteQuestion(env, type, id);
-      // بعدا در اینجا حذف از R2 را هم اضافه می‌کنیم
       return json({ ok: true });
     })();
   }
 
-  // صفحه ادمین با سه تب
+  // صفحه ادمین با تب‌های واقعی
   if (p === "/admin") {
     const body = `
+      <style>
+        .tabbar button{margin:0 4px;padding:6px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer}
+        .tabbar button.active{background:#222;color:#fff;border-color:#222}
+        .tabsec{display:none}
+      </style>
+
       <h1>پنل ادمین</h1>
-      <div class="tabs">
-        <a href="#konkur">ایجاد تست کنکور</a>
-        <a href="#talifi">ایجاد تست تالیفی</a>
-        <a href="#qa">ایجاد پرسش و پاسخ</a>
-        <a href="#manage">مدیریت سوالات</a>
+      <div class="tabbar">
+        <button data-tab="tab-konkur" class="active">ایجاد تست کنکور</button>
+        <button data-tab="tab-talifi">ایجاد تست تالیفی</button>
+        <button data-tab="tab-qa">ایجاد پرسش و پاسخ</button>
+        <button data-tab="tab-manage">مدیریت سوالات</button>
       </div>
 
       <!-- تب کنکور -->
-      <div class="card" id="tab-konkur">
+      <div class="card tabsec" id="tab-konkur" style="display:block">
         <b>ایجاد تست کنکور</b>
-        ${formHtml("/api/admin/create?type=konkur", true)}
+        ${formHtml("/api/admin/create?type=konkur", true, "k")}
         <pre id="echo-konkur" class="muted"></pre>
       </div>
 
       <!-- تب تالیفی -->
-      <div class="card" id="tab-talifi">
+      <div class="card tabsec" id="tab-talifi">
         <b>ایجاد تست تالیفی</b>
-        ${formHtml("/api/admin/create?type=talifi", true)}
+        ${formHtml("/api/admin/create?type=talifi", true, "t")}
         <pre id="echo-talifi" class="muted"></pre>
       </div>
 
       <!-- تب پرسش و پاسخ -->
-      <div class="card" id="tab-qa">
+      <div class="card tabsec" id="tab-qa">
         <b>ایجاد پرسش و پاسخ</b>
-        ${formHtml("/api/admin/create?type=qa", false)}
+        ${formHtml("/api/admin/create?type=qa", false, "q")}
         <pre id="echo-qa" class="muted"></pre>
       </div>
 
       <!-- تب مدیریت -->
-      <div class="card" id="tab-manage">
+      <div class="card tabsec" id="tab-manage">
         <b>مدیریت سوالات</b>
         <div style="display:flex; gap:8px; align-items:center">
           <label>نوع:</label>
@@ -107,14 +113,25 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         </div>
         <div style="margin-top:10px">
           <table border="1" cellpadding="6" style="width:100%; border-collapse:collapse">
-            <thead><tr><th>شناسه</th><th>صورت سوال</th><th>عملیات</th></tr></thead>
+            <thead><tr><th>شناسه</th><th>صورت سوال</th><th>نوع</th><th>عملیات</th></tr></thead>
             <tbody id="m-list"></tbody>
           </table>
         </div>
       </div>
 
       <script>
-        // helper
+        // تب‌ها
+        const tabs = document.querySelectorAll('.tabbar button');
+        function showTab(id){
+          document.querySelectorAll('.tabsec').forEach(el=>el.style.display='none');
+          document.getElementById(id).style.display='block';
+          tabs.forEach(b=>b.classList.toggle('active', b.dataset.tab===id));
+          location.hash = id;
+        }
+        tabs.forEach(b=>b.addEventListener('click', ()=>showTab(b.dataset.tab)));
+        if (location.hash && document.getElementById(location.hash.slice(1))) showTab(location.hash.slice(1));
+
+        // helpers
         async function fillSelect(id, url, valueKey = "id", labelKey = "name") {
           const el = document.getElementById(id);
           el.innerHTML = "";
@@ -150,7 +167,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
             const sourceId = document.getElementById(rootId+"-source").value;
             await fillSelect(rootId+"-chapter", "/api/taxonomy/chapters?sourceId=" + sourceId);
           });
-          await new Promise(r => setTimeout(r, 150));
+          await new Promise(r => setTimeout(r, 120));
           await upd();
         }
         function wireForm(formId, echoId) {
@@ -161,15 +178,11 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
             const res = await fetch(form.action, { method: "POST", body: fd });
             const data = await res.json();
             document.getElementById(echoId).textContent = JSON.stringify(data, null, 2);
-            form.reset();
+            // فرم را خالی نکن تا بشود سریع چندتا پشت سر هم ساخت
           });
         }
-        function formRootId(action) {
-          if (action.includes("konkur")) return "k";
-          if (action.includes("talifi")) return "t";
-          return "q";
-        }
-        // راه اندازی سه فرم
+
+        // راه‌اندازی هر سه فرم
         initCascades("k"); wireForm("form-k", "echo-konkur");
         initCascades("t"); wireForm("form-t", "echo-talifi");
         initCascades("q"); wireForm("form-q", "echo-qa");
@@ -181,10 +194,10 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
           const data = await res.json();
           const tb = document.getElementById("m-list");
           tb.innerHTML = "";
-          if (!data.ok) { tb.innerHTML = "<tr><td colspan='3'>خطا</td></tr>"; return; }
+          if (!data.ok) { tb.innerHTML = "<tr><td colspan='4'>خطا: "+(data.error||"")+"</td></tr>"; return; }
           for (const it of data.data) {
             const tr = document.createElement("tr");
-            tr.innerHTML = "<td>"+it.id+"</td><td>"+(it.stem?.slice(0,100) || "")+"</td><td></td>";
+            tr.innerHTML = "<td>"+it.id+"</td><td>"+(it.stem?.slice(0,120) || "")+"</td><td>"+it.type+"</td><td></td>";
             const btn = document.createElement("button");
             btn.textContent = "حذف";
             btn.onclick = async () => {
@@ -204,9 +217,8 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
   return null;
 }
 
-// فرم HTML ساز
-function formHtml(action: string, withOptions: boolean) {
-  const root = action.includes("konkur") ? "k" : action.includes("talifi") ? "t" : "q";
+// فرم‌ساز
+function formHtml(action: string, withOptions: boolean, root: "k"|"t"|"q") {
   return `
   <form id="form-${root}" method="post" action="${action}">
     <div><label>رشته</label> <select id="${root}-major" name="majorId" required></select></div>
