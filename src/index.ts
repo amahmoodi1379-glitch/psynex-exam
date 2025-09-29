@@ -14,12 +14,11 @@ export default {
     }
 
     return (
-      routeAdmin(req, url, env) ??      // این خط تغییر کرد
-      routeStudent(req, url) ??
-      routeManagement(req, url, env) ??
-      routeTaxonomy(req, url, env) ??
+      routeAdmin(req, url, env) ??      // ← env
+      routeStudent(req, url, env) ??    // ← env  (قبلاً احتمالاً بدون env بود)
+      routeManagement(req, url, env) ?? // ← env
+      routeTaxonomy(req, url, env) ??   // ← env
       html(page("یافت نشد", "<h1>404</h1>"), 404)
     );
   }
 };
-
