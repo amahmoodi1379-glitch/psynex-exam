@@ -130,20 +130,42 @@ export type ClientQStats = {
 // کلید شمارنده نمایش چالشی
 const chlgKey = (clientId: string, qid: string) => `chlg:${clientId}:${qid}`;
 
-// لیست همه پاسخ‌های یک کاربر (بر اساس clientId)
-export async function listAnswersByClient(env: any, clientId: string, scanLimit = 2000): Promise<StudentAnswerLog[]> {
-  const { keys } = await env.DATA.list({ prefix: `ans:${clientId}:`, limit: scanLimit });
+// قبلی را با این نسخه "صفحه‌بندی‌شده" جایگزین کن
+export async function listAnswersByClient(
+  env: any,
+  clientId: string,
+  maxRead = 800 // حداکثر چند لاگ اخیر را بخوانیم (کافی است)
+): Promise<StudentAnswerLog[]> {
+  const prefix = `ans:${clientId}:`;
+  let cursor: string | undefined = undefined;
+  const allKeys: string[] = [];
+
+  // KV.list حداکثر 1000 تا در هر درخواست می‌دهد؛ با cursor صفحه‌بندی می‌کنیم
+  while (true) {
+    const res = await env.DATA.list({ prefix, limit: 1000, cursor });
+    for (const k of res.keys) allKeys.push(k.name);
+    if (res.list_complete) break;
+    if (allKeys.length >= maxRead * 2) break; // بیش از نیاز جمع نکنیم
+    cursor = res.cursor;
+  }
+
+  // فقط آخرین maxRead کلید را بخوانیم (کاهش هزینه GET)
+  const take = allKeys.slice(-maxRead);
   const out: StudentAnswerLog[] = [];
-  for (const k of keys) {
-    const raw = await env.DATA.get(k.name);
+  for (let i = take.length - 1; i >= 0; i--) {
+    const raw = await env.DATA.get(take[i]);
     if (raw) out.push(JSON.parse(raw));
   }
   return out;
 }
 
-// ساخت آمار درست/غلط برای هر سؤالِ یک کاربر
-export async function buildClientStats(env: any, clientId: string): Promise<Map<string, ClientQStats>> {
-  const logs = await listAnswersByClient(env, clientId);
+// (اختیاری) اگر خواستی پنجرهٔ خواندن را کنترل‌پذیر کنی
+export async function buildClientStats(
+  env: any,
+  clientId: string,
+  maxRead = 800
+): Promise<Map<string, ClientQStats>> {
+  const logs = await listAnswersByClient(env, clientId, maxRead);
   const map = new Map<string, ClientQStats>();
   for (const lg of logs) {
     const key = `${lg.type}:${lg.qid}`;
@@ -154,6 +176,7 @@ export async function buildClientStats(env: any, clientId: string): Promise<Map<
   }
   return map;
 }
+
 
 async function getServeCount(env: any, clientId: string, qid: string): Promise<number> {
   const raw = await env.DATA.get(chlgKey(clientId, qid));
