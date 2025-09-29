@@ -5,7 +5,7 @@ import { routeManagement } from "./routes/management";
 import { routeTaxonomy } from "./routes/taxonomy";
 
 export default {
-  async fetch(req, env): Promise<Response> {
+  fetch(req, env): Response | Promise<Response> {
     const url = new URL(req.url);
 
     if (url.pathname === "/") {
@@ -14,10 +14,10 @@ export default {
     }
 
     return (
-      routeAdmin(req, url) ??
+      routeAdmin(req, url, env) ??      // این خط تغییر کرد
       routeStudent(req, url) ??
-      (await routeManagement(req, url, env)) ??
-      (await routeTaxonomy(req, url, env)) ??
+      routeManagement(req, url, env) ??
+      routeTaxonomy(req, url, env) ??
       html(page("یافت نشد", "<h1>404</h1>"), 404)
     );
   }
