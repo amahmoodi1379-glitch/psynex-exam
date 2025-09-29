@@ -2,3 +2,12 @@ name = "psynex-exam"
 main = "src/index.ts"
 compatibility_date = "2025-07-18"
 workers_dev = true
+
+name = "psynex-exam"
+main = "src/index.ts"
+compatibility_date = "2025-07-18"
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "TAXO"
+id = "d37f216a7880402baebc0ea71e3b189b"
