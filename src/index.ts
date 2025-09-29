@@ -2,6 +2,8 @@ import { html, page } from "./lib/http";
 import { routeAdmin } from "./routes/admin";
 import { routeStudent } from "./routes/student";
 import { routeManagement } from "./routes/management";
+import { routeTaxonomy } from "./routes/taxonomy";
+
 
 export default {
   fetch(req): Response | Promise<Response> {
@@ -21,6 +23,7 @@ export default {
       routeAdmin(req, url) ??
       routeStudent(req, url) ??
       routeManagement(req, url) ??
+      routeTaxonomy(req, url) ??
       html(page("یافت نشد", "<h1>404</h1>"), 404)
     );
   }
