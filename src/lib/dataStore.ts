@@ -78,3 +78,44 @@ export async function queryRandomQuestion(
   return picks[Math.floor(Math.random() * picks.length)];
 }
 
+export type StudentAnswerLog = {
+  clientId: string;
+  qid: string;
+  type: QuestionType;
+  choice: "A"|"B"|"C"|"D";
+  correct: boolean;
+  at: number;
+  filters?: Partial<Pick<Question, "majorId"|"degreeId"|"ministryId"|"examYearId"|"courseId"|"sourceId"|"chapterId">>;
+};
+
+const ansPrefix = (clientId: string) => `ans:${clientId}:`;     // کلیدهای پاسخ‌ها
+const ratKey = (qid: string) => `rat:${qid}`;                   // تجمیع امتیازها
+
+// ذخیره پاسخ دانشجو
+export async function recordAnswer(env: any, log: StudentAnswerLog): Promise<void> {
+  const key = ansPrefix(log.clientId) + String(log.at) + ":" + log.qid;
+  await env.DATA.put(key, JSON.stringify(log));
+}
+
+// ثبت/تجمیع امتیاز کیفیت/سختی برای یک سؤال
+export async function upsertRating(env: any, qid: string, quality?: number, difficulty?: number): Promise<void> {
+  if (!quality && !difficulty) return;
+  const raw = await env.DATA.get(ratKey(qid));
+  const agg = raw ? JSON.parse(raw) : { qCount: 0, qSum: 0, dCount: 0, dSum: 0 };
+  if (quality && quality >= 1 && quality <= 5) { agg.qCount++; agg.qSum += quality; }
+  if (difficulty && difficulty >= 1 && difficulty <= 5) { agg.dCount++; agg.dSum += difficulty; }
+  await env.DATA.put(ratKey(qid), JSON.stringify(agg));
+}
+
+// دریافت میانگین امتیاز یک سؤال (برای استفاده‌های بعدی)
+export async function getRating(env: any, qid: string): Promise<{quality?: number, difficulty?: number}> {
+  const raw = await env.DATA.get(ratKey(qid));
+  if (!raw) return {};
+  const a = JSON.parse(raw);
+  return {
+    quality: a.qCount ? a.qSum / a.qCount : undefined,
+    difficulty: a.dCount ? a.dSum / a.dCount : undefined
+  };
+}
+
+
