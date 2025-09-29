@@ -1,5 +1,5 @@
 import { html, json, page } from "../lib/http";
-import { queryRandomQuestion, getQuestion, Question } from "../lib/dataStore";
+import { queryRandomQuestion, getQuestion, Question, recordAnswer, upsertRating } from "../lib/dataStore";
 
 export function routeStudent(req: Request, url: URL, env?: any): Response | null {
   const p = url.pathname;
@@ -25,7 +25,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       const q = await queryRandomQuestion(env, type, filters);
       if (!q) return json({ ok: false, error: "no_question" }, 404);
 
-      // پاسخ امن: گزینه صحیح را ارسال نکن
+      // بدون گزینه صحیح
       const safe = {
         id: q.id, type: q.type, stem: q.stem,
         options: (q.options || []).map(o => ({ label: o.label, text: o.text }))
@@ -34,23 +34,43 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
     })();
   }
 
-  // API: چک کردن پاسخ (POST: id, type, choice)
-  if (p === "/api/student/check" && req.method === "POST") {
+  // API: چک کردن پاسخ و ثبت لاگ + امتیاز (POST: id,type,choice,clientId,quality?,difficulty?,filters?)
+  if (p === "/api/student/answer" && req.method === "POST") {
     return (async () => {
-      const body = await req.json().catch(() => null) as any;
-      const id = body?.id, type = body?.type as "konkur"|"talifi";
-      const choice = body?.choice as "A"|"B"|"C"|"D";
-      if (!id || !type || !choice) return json({ ok: false, error: "bad_request" }, 400);
-      if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
-      const q = await getQuestion(env, type, id);
-      if (!q) return json({ ok: false, error: "not_found" }, 404);
-      const correct = q.correctLabel === choice;
-      return json({
-        ok: true,
-        correct,
-        correctLabel: q.correctLabel,
-        expl: q.expl || null
-      });
+      try {
+        const body = await req.json();
+        const id = body?.id as string;
+        const type = body?.type as "konkur"|"talifi";
+        const choice = body?.choice as "A"|"B"|"C"|"D";
+        const clientId = body?.clientId as string;
+        const quality = body?.quality ? Number(body.quality) : undefined;
+        const difficulty = body?.difficulty ? Number(body.difficulty) : undefined;
+        const filters = body?.filters || undefined;
+
+        if (!id || !type || !choice || !clientId) return json({ ok: false, error: "bad_request" }, 400);
+        if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+
+        const q = await getQuestion(env, type, id);
+        if (!q) return json({ ok: false, error: "not_found" }, 404);
+
+        const correct = q.correctLabel === choice;
+        // ثبت پاسخ
+        await recordAnswer(env, {
+          clientId,
+          qid: id,
+          type,
+          choice,
+          correct,
+          at: Date.now(),
+          filters
+        });
+        // ثبت امتیاز (اختیاری)
+        await upsertRating(env, id, quality, difficulty);
+
+        return json({ ok: true, correct, correctLabel: q.correctLabel, expl: q.expl || null });
+      } catch (e: any) {
+        return json({ ok: false, error: String(e?.message || e) }, 500);
+      }
     })();
   }
 
@@ -81,14 +101,29 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       <div class="card" id="qbox" style="display:none">
         <div id="stem" style="font-weight:600;margin-bottom:8px"></div>
         <div id="opts"></div>
+
+        <div style="margin-top:10px">
+          <span>امتیاز کیفیت (اختیاری): </span>
+          <select id="quality"><option value="">--</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
+          <span style="margin-right:12px">سختی (اختیاری): </span>
+          <select id="difficulty"><option value="">--</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
+        </div>
+
         <div id="result" style="margin-top:10px" class="muted"></div>
         <button id="nextBtn" style="margin-top:8px">سؤال بعدی</button>
       </div>
 
-      <p class="muted">یادداشت: فعلاً جلوگیری از تکرار در حد مرورگر شماست (sessionStorage). بعد از افزودن لاگین گوگل، منطق اولویت‌دهی کامل می‌شود.</p>
-
       <script>
         const $ = s => document.querySelector(s);
+
+        // clientId دائم برای این مرورگر (بدون لاگین)
+        function getClientId(){
+          const k="psx_cid";
+          let v = localStorage.getItem(k);
+          if (!v) { v = crypto.randomUUID(); localStorage.setItem(k, v); }
+          return v;
+        }
+        const clientId = getClientId();
 
         async function fill(id, url, v="id", l="name") {
           const el = $("#"+id); el.innerHTML = "<option value=''>--</option>";
@@ -133,6 +168,18 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           return JSON.parse(s).includes(id);
         }
 
+        function currentFilters(){
+          return {
+            majorId: $("#major").value || undefined,
+            degreeId: $("#degree").value || undefined,
+            ministryId: $("#ministry").value || undefined,
+            examYearId: $("#examYear").value || undefined,
+            courseId: $("#course").value || undefined,
+            sourceId: $("#source").value || undefined,
+            chapterId: $("#chapter").value || undefined
+          };
+        }
+
         async function fetchRandom() {
           const type = $("#type").value;
           const majorId = $("#major").value;
@@ -163,7 +210,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           $("#qbox").style.display="block";
           $("#stem").textContent = q.stem;
           const box = $("#opts"); box.innerHTML = "";
-          for (const o of q.options || []) {
+          for (const o of (q.options || [])) {
             const btn = document.createElement("button");
             btn.textContent = o.label + ") " + o.text;
             btn.style.display = "block";
@@ -177,10 +224,16 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         }
 
         async function check(q, choice) {
-          const res = await fetch("/api/student/check", {
+          const quality = Number($("#quality").value || "") || undefined;
+          const difficulty = Number($("#difficulty").value || "") || undefined;
+          const payload = {
+            id: q.id, type: q.type, choice, clientId,
+            quality, difficulty, filters: currentFilters()
+          };
+          const res = await fetch("/api/student/answer", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id: q.id, type: q.type, choice })
+            body: JSON.stringify(payload)
           });
           const d = await res.json();
           if (!d.ok) { $("#result").textContent = "خطا."; return; }
@@ -197,4 +250,3 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
   return null;
 }
-
