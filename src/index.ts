@@ -5,7 +5,7 @@ import { routeManagement } from "./routes/management";
 import { routeTaxonomy } from "./routes/taxonomy";
 
 export default {
-  fetch(req, env): Response | Promise<Response> {
+  async fetch(req, env): Promise<Response> {
     const url = new URL(req.url);
 
     if (url.pathname === "/") {
@@ -13,12 +13,11 @@ export default {
       return html(page("خانه", body));
     }
 
-    // ترتیب مهم است. هر روت اگر مچ نشود باید null برگرداند.
     return (
       routeAdmin(req, url) ??
       routeStudent(req, url) ??
-      routeManagement(req, url, env) ??  // حتما env را پاس بده
-      routeTaxonomy(req, url, env) ??    // حتما env را پاس بده
+      (await routeManagement(req, url, env)) ??
+      (await routeTaxonomy(req, url, env)) ??
       html(page("یافت نشد", "<h1>404</h1>"), 404)
     );
   }
