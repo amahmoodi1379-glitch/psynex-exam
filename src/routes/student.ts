@@ -197,3 +197,12 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
   return null;
 }
+
+// دیباگ ساده: ببینیم بایندینگ‌ها می‌رسند یا نه
+if (p === "/api/student/debug" && req.method === "GET") {
+  return json({
+    hasEnv: !!env,
+    hasDATA: !!env?.DATA,
+    canList: !!env?.DATA?.list
+  });
+}
