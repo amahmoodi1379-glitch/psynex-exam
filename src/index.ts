@@ -4,26 +4,20 @@ import { routeStudent } from "./routes/student";
 import { routeManagement } from "./routes/management";
 import { routeTaxonomy } from "./routes/taxonomy";
 
-
 export default {
-  fetch(req): Response | Promise<Response> {
+  fetch(req, env): Response | Promise<Response> {
     const url = new URL(req.url);
 
-    // صفحه اصلی
     if (url.pathname === "/") {
-      const body = `
-        <h1>Psynex Exam</h1>
-        <p>این یک اسکلت ماژولار ساده است. از لینک‌های بالا وارد صفحات شوید.</p>
-      `;
+      const body = `<h1>Psynex Exam</h1><p>اسکلت ماژولار. از منوی بالا وارد شوید.</p>`;
       return html(page("خانه", body));
     }
 
-    // تلاش برای روت‌های ماژولار
     return (
       routeAdmin(req, url) ??
       routeStudent(req, url) ??
-      routeManagement(req, url) ??
-      routeTaxonomy(req, url) ??
+      routeManagement(req, url, env) ??
+      routeTaxonomy(req, url, env) ??
       html(page("یافت نشد", "<h1>404</h1>"), 404)
     );
   }
