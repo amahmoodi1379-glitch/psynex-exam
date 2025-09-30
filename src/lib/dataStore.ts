@@ -486,6 +486,8 @@ export async function gradeExam(
     percentNoNeg, percentWithNeg, finishedAt: Date.now()
   };
   await env.DATA.put(examResKey(clientId, examId), JSON.stringify(res));
+  await saveExamSubmission(env, clientId, examId, answers);
+
 
   // ثبت در لاگ پاسخ‌ها برای آمار/چالش (استفاده از recordAnswer قبلاً تعریف شده)
   try {
