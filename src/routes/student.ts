@@ -50,28 +50,6 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         if (!id || !type || !choice || !clientId) return json({ ok: false, error: "bad_request" }, 400);
         if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
 
-        const q = await getQuestion(env, type);
-        //  ↑ BUG FIX safeguard: previous line wrong. Should be getQuestion(env, type, id). Keep compile:
-      } catch (e: any) { return json({ ok: false, error: String(e?.message || e) }, 500); }
-    })();
-  }
-
-  // --- API: جواب + لاگ + امتیاز (Fixed) ---
-  if (p === "/api/student/answer" && req.method === "POST") {
-    return (async () => {
-      try {
-        const body = await req.json();
-        const id = body?.id as string;
-        const type = body?.type as "konkur"|"talifi";
-        const choice = body?.choice as "A"|"B"|"C"|"D";
-        const clientId = body?.clientId as string;
-        const quality = body?.quality ? Number(body.quality) : undefined;
-        const difficulty = body?.difficulty ? Number(body.difficulty) : undefined;
-        const filters = body?.filters || undefined;
-
-        if (!id || !type || !choice || !clientId) return json({ ok: false, error: "bad_request" }, 400);
-        if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
-
         const q = await getQuestion(env, type, id);
         if (!q) return json({ ok: false, error: "not_found" }, 404);
 
@@ -125,22 +103,34 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
     })();
   }
 
-  // --- API: شروع آزمون (کنکور) ---
+  // --- API: شروع آزمون (mode: konkur | mixed | talifi) ---
   if (p === "/api/student/exam/start" && req.method === "POST") {
     return (async () => {
       try {
         const body = await req.json();
         const clientId = String(body?.clientId || "");
+        const mode = (String(body?.mode || "konkur") as "konkur"|"mixed"|"talifi");
         const majorId = String(body?.majorId || "");
-        const courseId = String(body?.courseId || "");
+        const courseId = body?.courseId ? String(body.courseId) : "";
+        const sourceId = body?.sourceId ? String(body.sourceId) : "";
+        const chapterId = body?.chapterId ? String(body.chapterId) : "";
         const count = Math.max(5, Math.min(50, Number(body?.count || 20)));
-        const durationMin = Math.max(1, Math.min(180, Number(body?.durationMin || 10))); // 1..180 دقیقه
+        const durationMin = Math.max(1, Math.min(180, Number(body?.durationMin || 10)));
 
-        if (!clientId || !majorId || !courseId) return json({ ok: false, error: "bad_request" }, 400);
+        if (!clientId) return json({ ok: false, error: "bad_request" }, 400);
+        if (!majorId)  return json({ ok: false, error: "majorId required" }, 400);
+        if ((mode === "konkur" || mode === "mixed") && !courseId) {
+          return json({ ok: false, error: "courseId required" }, 400);
+        }
         if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
 
         const { id, questions, durationSec } = await createExamDraft(
-          env, clientId, "konkur", { majorId, courseId }, count, durationMin * 60
+          env,
+          clientId,
+          mode,
+          { majorId, courseId: courseId || undefined, sourceId: sourceId || undefined, chapterId: chapterId || undefined },
+          count,
+          durationMin * 60
         );
         return json({ ok: true, examId: id, questions, durationSec });
       } catch (e: any) {
@@ -178,6 +168,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         .bars{display:flex;align-items:flex-end;gap:2px;height:120px;border-bottom:1px solid #eee;margin-top:8px}
         .bar{width:6px;background:#888}
         .muted{color:#666}
+        .hide{display:none}
       </style>
 
       <h1>صفحه دانشجو</h1>
@@ -185,7 +176,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         <button data-tab="tab-single" class="active">تک‌سؤال‌ها</button>
         <button data-tab="tab-challenges">چالش‌ها</button>
         <button data-tab="tab-stats">آمار</button>
-        <button data-tab="tab-exam">آزمون (کنکور)</button>
+        <button data-tab="tab-exam">آزمون</button>
       </div>
 
       <!-- تک‌سؤال‌ها -->
@@ -211,14 +202,12 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         <div class="card" id="qbox" style="display:none">
           <div id="stem" style="font-weight:600;margin-bottom:8px"></div>
           <div id="opts"></div>
-
           <div style="margin-top:10px">
             <span>امتیاز کیفیت (اختیاری): </span>
             <select id="quality"><option value="">--</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
             <span style="margin-right:12px">سختی (اختیاری): </span>
             <select id="difficulty"><option value="">--</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
           </div>
-
           <div id="result" style="margin-top:10px" class="muted"></div>
           <button id="nextBtn" style="margin-top:8px">سؤال بعدی</button>
         </div>
@@ -245,14 +234,12 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         <div class="card" id="cbox" style="display:none">
           <div id="cstem" style="font-weight:600;margin-bottom:8px"></div>
           <div id="copts"></div>
-
           <div style="margin-top:10px">
             <span>کیفیت (اختیاری): </span>
             <select id="cquality"><option value="">--</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
             <span style="margin-right:12px">سختی (اختیاری): </span>
             <select id="cdifficulty"><option value="">--</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
           </div>
-
           <div id="cresult" style="margin-top:10px" class="muted"></div>
           <button id="cnextBtn" style="margin-top:8px">چالشی بعدی</button>
         </div>
@@ -278,17 +265,27 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         <div id="chart" class="bars"></div>
       </div>
 
-      <!-- آزمون (کنکور) -->
+      <!-- آزمون -->
       <div class="card tabsec" id="tab-exam">
-        <b>آزمون با تست‌های کنکور</b>
+        <b>آزمون</b>
         <div id="exam-setup" style="display:block">
           <div style="display:flex; gap:8px; align-items:end; flex-wrap:wrap">
+            <div><label>نوع آزمون</label>
+              <select id="x-mode">
+                <option value="konkur">کنکور</option>
+                <option value="mixed">ترکیبی (کنکور+تالیفی)</option>
+                <option value="talifi">تالیفی</option>
+              </select>
+            </div>
             <div><label>رشته (الزامی)</label> <select id="x-major" required></select></div>
-            <div><label>درس (الزامی)</label> <select id="x-course" required></select></div>
+            <div id="x-course-wrap"><label>درس ${/* برای konkur/mixed اجباری */""}</label> <select id="x-course"></select></div>
+            <div id="x-source-wrap" class="hide"><label>منبع</label> <select id="x-source"></select></div>
+            <div id="x-chapter-wrap" class="hide"><label>فصل</label> <select id="x-chapter"></select></div>
             <div><label>تعداد سؤال</label> <input id="x-count" type="number" min="5" max="50" value="10" style="width:90px"></div>
             <div><label>مدت (دقیقه)</label> <input id="x-min" type="number" min="1" max="180" value="10" style="width:90px"></div>
             <button id="x-start">شروع آزمون</button>
           </div>
+          <div class="muted" style="margin-top:6px">در ترکیبی، ۱۰–۶۰٪ سؤالات از کنکور هستند (در صورت کمبود داده، نسبت خودکار تنظیم می‌شود).</div>
         </div>
 
         <div id="exam-box" style="display:none">
@@ -471,18 +468,43 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           bars("chart", s.series);
         }
 
-        // ---------- آزمون (کنکور) ----------
+        // ---------- آزمون ----------
         async function initCascadesExam() {
           await fill("x-major", "/api/taxonomy/majors", "id", "name", false);
-          const upd = async () => {
+          const updCourse = async () => {
             const mid = $("#x-major").value || "";
-            await fill("x-course", "/api/taxonomy/courses?majorId="+encodeURIComponent(mid), "id", "name", false);
+            await fill("x-course", "/api/taxonomy/courses?majorId="+encodeURIComponent(mid), "id", "name", true);
+            const cid = $("#x-course").value || "";
+            await fill("x-source", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid), "id", "name", true);
+            const sid = $("#x-source").value || "";
+            await fill("x-chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid), "id", "name", true);
           };
-          $("#x-major").addEventListener("change", upd);
-          await new Promise(r=>setTimeout(r,100)); await upd();
+          $("#x-major").addEventListener("change", updCourse);
+          $("#x-course").addEventListener("change", async () => {
+            const cid = $("#x-course").value || "";
+            await fill("x-source", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid), "id", "name", true);
+          });
+          $("#x-source").addEventListener("change", async () => {
+            const sid = $("#x-source").value || "";
+            await fill("x-chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid), "id", "name", true);
+          });
+          await new Promise(r=>setTimeout(r,100));
+          await updCourse();
         }
 
-        let exam = null; // {examId, questions, durationSec, idx, answers, tLeft, timer}
+        function toggleExamFields() {
+          const mode = $("#x-mode").value;
+          // برای konkur/mixed: course الزامی؛ برای talifi اختیاری + source/chapter ظاهر
+          $("#x-course-wrap").classList.toggle("hide", mode === "talifi");
+          $("#x-source-wrap").classList.toggle("hide", mode !== "talifi");
+          $("#x-chapter-wrap").classList.toggle("hide", mode !== "talifi");
+        }
+        document.addEventListener("change", (e) => {
+          const t = e.target as HTMLElement;
+          if (t && t.id === "x-mode") toggleExamFields();
+        });
+
+        let exam = null;
         function fmt(sec){ const m = Math.floor(sec/60), s = sec%60; return String(m).padStart(2,"0")+":"+String(s).padStart(2,"0"); }
         function renderExam() {
           if (!exam) return;
@@ -512,12 +534,18 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           if (exam.tLeft <= 0) submitExam();
         }
         async function startExam() {
-          const majorId = $("#x-major").value, courseId = $("#x-course").value;
-          const count = Number($("#x-count").value || 10), durationMin = Number($("#x-min").value || 10);
-          if (!majorId || !courseId) { alert("رشته و درس را انتخاب کن."); return; }
+          const mode = $("#x-mode").value;
+          const majorId = $("#x-major").value;
+          const courseId = $("#x-course").value;
+          const sourceId = $("#x-source").value;
+          const chapterId = $("#x-chapter").value;
+          const count = Number($("#x-count").value || 10);
+          const durationMin = Number($("#x-min").value || 10);
+          if (!majorId) { alert("رشته را انتخاب کن."); return; }
+          if ((mode==="konkur" || mode==="mixed") && !courseId) { alert("برای کنکور/ترکیبی باید درس را انتخاب کنی."); return; }
           const res = await fetch("/api/student/exam/start", {
             method: "POST", headers: {"content-type":"application/json"},
-            body: JSON.stringify({ clientId, majorId, courseId, count, durationMin })
+            body: JSON.stringify({ clientId, mode, majorId, courseId, sourceId, chapterId, count, durationMin })
           });
           const d = await res.json();
           if (!d.ok) { alert(d.error || "خطا در شروع آزمون"); return; }
@@ -563,6 +591,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           await initCascadesSingle();
           await initCascadesChallenge();
           await initCascadesExam();
+          toggleExamFields();
         }
         initAll();
       </script>
