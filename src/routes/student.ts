@@ -499,10 +499,9 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           $("#x-source-wrap").classList.toggle("hide", mode !== "talifi");
           $("#x-chapter-wrap").classList.toggle("hide", mode !== "talifi");
         }
-        document.addEventListener("change", (e) => {
-          const t = e.target as HTMLElement;
-          if (t && t.id === "x-mode") toggleExamFields();
-        });
+        const xmode = document.getElementById("x-mode");
+if (xmode) xmode.addEventListener("change", toggleExamFields);
+
 
         let exam = null;
         function fmt(sec){ const m = Math.floor(sec/60), s = sec%60; return String(m).padStart(2,"0")+":"+String(s).padStart(2,"0"); }
