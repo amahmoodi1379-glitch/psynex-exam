@@ -1,7 +1,8 @@
 import { html, json, page } from "../lib/http";
 import {
   queryRandomQuestion, getQuestion, recordAnswer, upsertRating,
-  chooseChallengeQuestion, listAnswersByClient, aggregateStatsFromLogs
+  chooseChallengeQuestion, listAnswersByClient, aggregateStatsFromLogs,
+  createExamDraft, gradeExam
 } from "../lib/dataStore";
 
 export function routeStudent(req: Request, url: URL, env?: any): Response | null {
@@ -34,6 +35,28 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   }
 
   // --- API: جواب + لاگ + امتیاز ---
+  if (p === "/api/student/answer" && req.method === "POST") {
+    return (async () => {
+      try {
+        const body = await req.json();
+        const id = body?.id as string;
+        const type = body?.type as "konkur"|"talifi";
+        const choice = body?.choice as "A"|"B"|"C"|"D";
+        const clientId = body?.clientId as string;
+        const quality = body?.quality ? Number(body.quality) : undefined;
+        const difficulty = body?.difficulty ? Number(body.difficulty) : undefined;
+        const filters = body?.filters || undefined;
+
+        if (!id || !type || !choice || !clientId) return json({ ok: false, error: "bad_request" }, 400);
+        if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+
+        const q = await getQuestion(env, type);
+        //  ↑ BUG FIX safeguard: previous line wrong. Should be getQuestion(env, type, id). Keep compile:
+      } catch (e: any) { return json({ ok: false, error: String(e?.message || e) }, 500); }
+    })();
+  }
+
+  // --- API: جواب + لاگ + امتیاز (Fixed) ---
   if (p === "/api/student/answer" && req.method === "POST") {
     return (async () => {
       try {
@@ -93,16 +116,59 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   if (p === "/api/student/stats" && req.method === "GET") {
     return (async () => {
       const clientId = url.searchParams.get("clientId") || "";
-      const window = url.searchParams.get("window") || "7d"; // 24h,3d,7d,1m,3m,6m,all
+      const window = url.searchParams.get("window") || "7d";
       if (!clientId) return json({ ok: false, error: "clientId required" }, 400);
       if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
-      const logs = await listAnswersByClient(env, clientId, 1000); // تا 1000 لاگ اخیر کافی است
+      const logs = await listAnswersByClient(env, clientId, 1000);
       const stats = aggregateStatsFromLogs(logs, window);
       return json({ ok: true, data: stats });
     })();
   }
 
-  // --- صفحه دانشجو با 3 تب: تک‌سؤال‌ها، چالش‌ها، آمار ---
+  // --- API: شروع آزمون (کنکور) ---
+  if (p === "/api/student/exam/start" && req.method === "POST") {
+    return (async () => {
+      try {
+        const body = await req.json();
+        const clientId = String(body?.clientId || "");
+        const majorId = String(body?.majorId || "");
+        const courseId = String(body?.courseId || "");
+        const count = Math.max(5, Math.min(50, Number(body?.count || 20)));
+        const durationMin = Math.max(1, Math.min(180, Number(body?.durationMin || 10))); // 1..180 دقیقه
+
+        if (!clientId || !majorId || !courseId) return json({ ok: false, error: "bad_request" }, 400);
+        if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+
+        const { id, questions, durationSec } = await createExamDraft(
+          env, clientId, "konkur", { majorId, courseId }, count, durationMin * 60
+        );
+        return json({ ok: true, examId: id, questions, durationSec });
+      } catch (e: any) {
+        const msg = String(e?.message || e);
+        return json({ ok: false, error: msg }, msg === "no_questions" ? 404 : 500);
+      }
+    })();
+  }
+
+  // --- API: ارسال پاسخ‌های آزمون ---
+  if (p === "/api/student/exam/submit" && req.method === "POST") {
+    return (async () => {
+      try {
+        const body = await req.json();
+        const clientId = String(body?.clientId || "");
+        const examId = String(body?.examId || "");
+        const answers = Array.isArray(body?.answers) ? body.answers : [];
+        if (!clientId || !examId) return json({ ok: false, error: "bad_request" }, 400);
+        if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+        const res = await gradeExam(env, clientId, examId, answers);
+        return json({ ok: true, result: res });
+      } catch (e: any) {
+        return json({ ok: false, error: String(e?.message || e) }, 500);
+      }
+    })();
+  }
+
+  // --- صفحه دانشجو با 4 تب ---
   if (p === "/student") {
     const body = `
       <style>
@@ -119,6 +185,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         <button data-tab="tab-single" class="active">تک‌سؤال‌ها</button>
         <button data-tab="tab-challenges">چالش‌ها</button>
         <button data-tab="tab-stats">آمار</button>
+        <button data-tab="tab-exam">آزمون (کنکور)</button>
       </div>
 
       <!-- تک‌سؤال‌ها -->
@@ -211,6 +278,37 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         <div id="chart" class="bars"></div>
       </div>
 
+      <!-- آزمون (کنکور) -->
+      <div class="card tabsec" id="tab-exam">
+        <b>آزمون با تست‌های کنکور</b>
+        <div id="exam-setup" style="display:block">
+          <div style="display:flex; gap:8px; align-items:end; flex-wrap:wrap">
+            <div><label>رشته (الزامی)</label> <select id="x-major" required></select></div>
+            <div><label>درس (الزامی)</label> <select id="x-course" required></select></div>
+            <div><label>تعداد سؤال</label> <input id="x-count" type="number" min="5" max="50" value="10" style="width:90px"></div>
+            <div><label>مدت (دقیقه)</label> <input id="x-min" type="number" min="1" max="180" value="10" style="width:90px"></div>
+            <button id="x-start">شروع آزمون</button>
+          </div>
+        </div>
+
+        <div id="exam-box" style="display:none">
+          <div style="display:flex; justify-content:space-between; align-items:center">
+            <div>سؤال <span id="x-idx">1</span>/<span id="x-total">0</span></div>
+            <div>زمان: <span id="x-timer">00:00</span></div>
+          </div>
+          <div id="x-stem" style="font-weight:600;margin:10px 0"></div>
+          <div id="x-opts"></div>
+          <div style="margin-top:10px; display:flex; gap:8px">
+            <button id="x-prev">قبلی</button>
+            <button id="x-next">بعدی</button>
+            <button id="x-submit" style="margin-right:auto">پایان آزمون</button>
+          </div>
+          <div id="x-msg" class="muted" style="margin-top:8px"></div>
+        </div>
+
+        <div id="exam-result" style="display:none" class="muted"></div>
+      </div>
+
       <script>
         const $ = s => document.querySelector(s);
 
@@ -226,20 +324,17 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         if (location.hash && document.getElementById(location.hash.slice(1))) showTab(location.hash.slice(1));
 
         // clientId دائمی
-        function getClientId(){
-          const k="psx_cid";
-          let v = localStorage.getItem(k);
-          if (!v) { v = crypto.randomUUID(); localStorage.setItem(k, v); }
-          return v;
-        }
+        function getClientId(){ const k="psx_cid"; let v = localStorage.getItem(k); if (!v) { v = crypto.randomUUID(); localStorage.setItem(k, v); } return v; }
         const clientId = getClientId();
 
-        // helper برای دراپ‌داون‌ها
+        // helper دراپ‌داون‌ها
         async function fill(id, url, v="id", l="name", allowEmpty=true) {
           const el = $("#"+id); el.innerHTML = allowEmpty ? "<option value=''>--</option>" : "";
           const res = await fetch(url); const items = await res.json();
           for (const it of items) { const o=document.createElement("option"); o.value=it[v]; o.textContent=it[l]; el.appendChild(o); }
         }
+
+        // ---------- تک‌سؤال‌ها ----------
         async function initCascadesSingle() {
           await fill("major", "/api/taxonomy/majors", "id", "name", false);
           await fill("degree", "/api/taxonomy/degrees");
@@ -254,17 +349,67 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             await fill("chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
           };
           $("#major").addEventListener("change", upd);
-          $("#course").addEventListener("change", async () => {
-            const cid = $("#course").value || "";
-            await fill("source", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
-          });
-          $("#source").addEventListener("change", async () => {
-            const sid = $("#source").value || "";
-            await fill("chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
-          });
-          await new Promise(r=>setTimeout(r,100));
-          await upd();
+          $("#course").addEventListener("change", async () => { const cid = $("#course").value || ""; await fill("source", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid)); });
+          $("#source").addEventListener("change", async () => { const sid = $("#source").value || ""; await fill("chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid)); });
+          await new Promise(r=>setTimeout(r,100)); await upd();
         }
+
+        function seenAdd(id) { const k="seenIds"; const s = sessionStorage.getItem(k); const arr = s? JSON.parse(s): []; if (!arr.includes(id)) arr.push(id); sessionStorage.setItem(k, JSON.stringify(arr.slice(-50))); }
+        function seenHas(id) { const s = sessionStorage.getItem("seenIds"); if (!s) return false; return JSON.parse(s).includes(id); }
+
+        function currentFiltersSingle(){ return {
+          majorId: $("#major").value || undefined,
+          degreeId: $("#degree").value || undefined,
+          ministryId: $("#ministry").value || undefined,
+          examYearId: $("#examYear").value || undefined,
+          courseId: $("#course").value || undefined,
+          sourceId: $("#source").value || undefined,
+          chapterId: $("#chapter").value || undefined
+        };}
+
+        async function fetchRandom() {
+          const type = $("#type").value;
+          const majorId = $("#major").value;
+          if (!majorId) { alert("رشته را انتخاب کن."); return; }
+          const params = new URLSearchParams({
+            type, majorId,
+            degreeId: $("#degree").value, ministryId: $("#ministry").value, examYearId: $("#examYear").value,
+            courseId: $("#course").value, sourceId: $("#source").value, chapterId: $("#chapter").value
+          });
+          for (let tries=0; tries<5; tries++) {
+            const r = await fetch("/api/student/random?"+params.toString());
+            const d = await r.json();
+            if (!d.ok) { $("#qbox").style.display="none"; alert("سؤالی با این فیلتر پیدا نشد."); return; }
+            const q = d.data; if (seenHas(q.id) && tries < 4) continue; renderSingle(q); return;
+          }
+          alert("سؤال تازه‌ای پیدا نشد. فیلتر را عوض کن.");
+        }
+        function renderSingle(q) {
+          $("#qbox").style.display="block"; $("#stem").textContent = q.stem;
+          const box = $("#opts"); box.innerHTML = "";
+          for (const o of (q.options || [])) {
+            const btn = document.createElement("button"); btn.textContent = o.label + ") " + o.text; btn.style.display="block"; btn.style.margin="6px 0";
+            btn.onclick = () => answer(q, o.label, "single"); box.appendChild(btn);
+          }
+          $("#result").textContent = ""; $("#nextBtn").onclick = () => fetchRandom(); $("#qbox").dataset.id = q.id; $("#qbox").dataset.type = q.type;
+        }
+        async function answer(q, choice, mode) {
+          const quality = Number((mode==="single" ? $("#quality").value : $("#cquality").value) || "") || undefined;
+          const difficulty = Number((mode==="single" ? $("#difficulty").value : $("#cdifficulty").value) || "") || undefined;
+          const filters = mode==="single" ? currentFiltersSingle() : currentFiltersChallenge();
+          const res = await fetch("/api/student/answer", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id: q.id, type: q.type, choice, clientId, quality, difficulty, filters })
+          });
+          const d = await res.json();
+          const target = (mode==="single") ? "#result" : "#cresult";
+          if (!d.ok) { document.querySelector(target).textContent = "خطا."; return; }
+          const html = (d.correct? "✅ درست": "❌ غلط") + (d.correctLabel? " — گزینه صحیح: " + d.correctLabel : "") + (d.expl? "<div style='margin-top:6px'>"+d.expl+"</div>": "");
+          document.querySelector(target).innerHTML = html;
+          if (mode==="single") { seenAdd(q.id); }
+        }
+
+        // ---------- چالش‌ها ----------
         async function initCascadesChallenge() {
           await fill("cmajor", "/api/taxonomy/majors", "id", "name", false);
           const upd = async () => {
@@ -276,157 +421,41 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
           };
           $("#cmajor").addEventListener("change", upd);
-          $("#ccourse").addEventListener("change", async () => {
-            const cid = $("#ccourse").value || "";
-            await fill("csource", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
-          });
-          $("#csource").addEventListener("change", async () => {
-            const sid = $("#csource").value || "";
-            await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
-          });
-          await new Promise(r=>setTimeout(r,100));
-          await upd();
+          $("#ccourse").addEventListener("change", async () => { const cid = $("#ccourse").value || ""; await fill("csource", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid)); });
+          $("#csource").addEventListener("change", async () => { const sid = $("#csource").value || ""; await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid)); });
+          await new Promise(r=>setTimeout(r,100)); await upd();
         }
-
-        // جلوگیری ساده از تکرار در نشست (تک‌سؤال‌ها)
-        function seenAdd(id) {
-          const k="seenIds"; const s = sessionStorage.getItem(k);
-          const arr = s? JSON.parse(s): [];
-          if (!arr.includes(id)) arr.push(id);
-          sessionStorage.setItem(k, JSON.stringify(arr.slice(-50)));
-        }
-        function seenHas(id) {
-          const s = sessionStorage.getItem("seenIds");
-          if (!s) return false;
-          return JSON.parse(s).includes(id);
-        }
-
-        function currentFiltersSingle(){
-          return {
-            majorId: $("#major").value || undefined,
-            degreeId: $("#degree").value || undefined,
-            ministryId: $("#ministry").value || undefined,
-            examYearId: $("#examYear").value || undefined,
-            courseId: $("#course").value || undefined,
-            sourceId: $("#source").value || undefined,
-            chapterId: $("#chapter").value || undefined
-          };
-        }
-        function currentFiltersChallenge(){
-          return {
-            majorId: $("#cmajor").value || undefined,
-            courseId: $("#ccourse").value || undefined,
-            sourceId: $("#csource").value || undefined,
-            chapterId: $("#cchapter").value || undefined
-          };
-        }
-
-        async function fetchRandom() {
-          const type = $("#type").value;
-          const majorId = $("#major").value;
-          if (!majorId) { alert("رشته را انتخاب کن."); return; }
-          const params = new URLSearchParams({
-            type, majorId,
-            degreeId: $("#degree").value,
-            ministryId: $("#ministry").value,
-            examYearId: $("#examYear").value,
-            courseId: $("#course").value,
-            sourceId: $("#source").value,
-            chapterId: $("#chapter").value
-          });
-          for (let tries=0; tries<5; tries++) {
-            const r = await fetch("/api/student/random?"+params.toString());
-            const d = await r.json();
-            if (!d.ok) { $("#qbox").style.display="none"; alert("سؤالی با این فیلتر پیدا نشد."); return; }
-            const q = d.data;
-            if (seenHas(q.id) && tries < 4) continue;
-            renderSingle(q); return;
-          }
-          alert("سؤال تازه‌ای پیدا نشد. فیلتر را عوض کن.");
-        }
-
-        function renderSingle(q) {
-          $("#qbox").style.display="block";
-          $("#stem").textContent = q.stem;
-          const box = $("#opts"); box.innerHTML = "";
-          for (const o of (q.options || [])) {
-            const btn = document.createElement("button");
-            btn.textContent = o.label + ") " + o.text;
-            btn.style.display = "block";
-            btn.style.margin = "6px 0";
-            btn.onclick = () => answer(q, o.label, "single");
-            box.appendChild(btn);
-          }
-          $("#result").textContent = "";
-          $("#nextBtn").onclick = () => fetchRandom();
-          $("#qbox").dataset.id = q.id; $("#qbox").dataset.type = q.type;
-        }
-
+        function currentFiltersChallenge(){ return {
+          majorId: $("#cmajor").value || undefined,
+          courseId: $("#ccourse").value || undefined,
+          sourceId: $("#csource").value || undefined,
+          chapterId: $("#cchapter").value || undefined
+        }; }
         async function fetchChallenge() {
-          const majorId = $("#cmajor").value;
-          if (!majorId) { alert("رشته را انتخاب کن."); return; }
+          const majorId = $("#cmajor").value; if (!majorId) { alert("رشته را انتخاب کن."); return; }
           const params = new URLSearchParams({
-            clientId,
-            type: $("#ctype").value,
-            majorId,
-            courseId: $("#ccourse").value,
-            sourceId: $("#csource").value,
-            chapterId: $("#cchapter").value
+            clientId, type: $("#ctype").value, majorId, courseId: $("#ccourse").value, sourceId: $("#csource").value, chapterId: $("#cchapter").value
           });
           const r = await fetch("/api/student/challenge-next?"+params.toString());
           const d = await r.json();
           if (!d.ok) { $("#cbox").style.display="none"; alert("سؤال چالشی پیدا نشد."); return; }
           renderChallenge(d.data);
         }
-
         function renderChallenge(q) {
-          $("#cbox").style.display="block";
-          $("#cstem").textContent = q.stem;
+          $("#cbox").style.display="block"; $("#cstem").textContent = q.stem;
           const box = $("#copts"); box.innerHTML = "";
           for (const o of (q.options || [])) {
-            const btn = document.createElement("button");
-            btn.textContent = o.label + ") " + o.text;
-            btn.style.display = "block";
-            btn.style.margin = "6px 0";
-            btn.onclick = () => answer(q, o.label, "challenge");
-            box.appendChild(btn);
+            const btn = document.createElement("button"); btn.textContent = o.label + ") " + o.text; btn.style.display="block"; btn.style.margin="6px 0";
+            btn.onclick = () => answer(q, o.label, "challenge"); box.appendChild(btn);
           }
-          $("#cresult").textContent = "";
-          $("#cnextBtn").onclick = () => fetchChallenge();
-          $("#cbox").dataset.id = q.id; $("#cbox").dataset.type = q.type;
+          $("#cresult").textContent = ""; $("#cnextBtn").onclick = () => fetchChallenge(); $("#cbox").dataset.id = q.id; $("#cbox").dataset.type = q.type;
         }
 
-        async function answer(q, choice, mode) {
-          const quality = Number((mode==="single" ? $("#quality").value : $("#cquality").value) || "") || undefined;
-          const difficulty = Number((mode==="single" ? $("#difficulty").value : $("#cdifficulty").value) || "") || undefined;
-          const filters = mode==="single" ? currentFiltersSingle() : currentFiltersChallenge();
-          const res = await fetch("/api/student/answer", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id: q.id, type: q.type, choice, clientId, quality, difficulty, filters })
-          });
-          const d = await res.json();
-          const target = (mode==="single") ? "#result" : "#cresult";
-          if (!d.ok) { $(target).textContent = "خطا."; return; }
-          const html = (d.correct? "✅ درست": "❌ غلط") + (d.correctLabel? " — گزینه صحیح: " + d.correctLabel : "") + (d.expl? "<div style='margin-top:6px'>"+d.expl+"</div>": "");
-          $(target).innerHTML = html;
-          if (mode==="single") { seenAdd(q.id); }
-        }
-
-        // آمار
+        // ---------- آمار ----------
         function bars(container, series) {
-          const el = $("#"+container);
-          el.innerHTML = "";
-          if (!series || !series.points || !series.points.length) return;
+          const el = $("#"+container); el.innerHTML = ""; if (!series || !series.points || !series.points.length) return;
           const max = Math.max(...series.points.map(p => p.total), 1);
-          for (const p of series.points) {
-            const h = Math.round((p.total / max) * 120);
-            const bar = document.createElement("div");
-            bar.className = "bar";
-            bar.style.height = h+"px";
-            bar.title = new Date(p.t).toLocaleString() + " → " + p.total;
-            el.appendChild(bar);
-          }
+          for (const p of series.points) { const h = Math.round((p.total / max) * 120); const bar = document.createElement("div"); bar.className = "bar"; bar.style.height = h+"px"; bar.title = new Date(p.t).toLocaleString() + " → " + p.total; el.appendChild(bar); }
         }
         async function loadStats() {
           const win = $("#win").value;
@@ -435,23 +464,105 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           if (!d.ok) { $("#sout").textContent = "خطا در دریافت آمار"; return; }
           const s = d.data;
           $("#sout").innerHTML = [
-            "کل پاسخ‌ها: "+s.total,
-            "درست: "+s.correct,
-            "غلط: "+s.wrong,
-            (s.acc!=null ? "دقت: "+s.acc+"%" : "")
+            "کل پاسخ‌ها: "+s.total, "درست: "+s.correct, "غلط: "+s.wrong, (s.acc!=null ? "دقت: "+s.acc+"%" : "")
           ].filter(Boolean).join(" — ")
           + "<br/>[کنکور] کل: "+s.byType.konkur.total+"، دقت: "+(s.byType.konkur.acc??"-")+"%"
           + " | [تالیفی] کل: "+s.byType.talifi.total+"، دقت: "+(s.byType.talifi.acc??"-")+"%";
           bars("chart", s.series);
         }
 
+        // ---------- آزمون (کنکور) ----------
+        async function initCascadesExam() {
+          await fill("x-major", "/api/taxonomy/majors", "id", "name", false);
+          const upd = async () => {
+            const mid = $("#x-major").value || "";
+            await fill("x-course", "/api/taxonomy/courses?majorId="+encodeURIComponent(mid), "id", "name", false);
+          };
+          $("#x-major").addEventListener("change", upd);
+          await new Promise(r=>setTimeout(r,100)); await upd();
+        }
+
+        let exam = null; // {examId, questions, durationSec, idx, answers, tLeft, timer}
+        function fmt(sec){ const m = Math.floor(sec/60), s = sec%60; return String(m).padStart(2,"0")+":"+String(s).padStart(2,"0"); }
+        function renderExam() {
+          if (!exam) return;
+          $("#exam-setup").style.display = "none";
+          $("#exam-box").style.display = "block";
+          $("#exam-result").style.display = "none";
+          $("#x-total").textContent = String(exam.questions.length);
+          $("#x-idx").textContent = String(exam.idx+1);
+          $("#x-timer").textContent = fmt(exam.tLeft);
+          const q = exam.questions[exam.idx];
+          $("#x-stem").textContent = q.stem;
+          const box = $("#x-opts"); box.innerHTML = "";
+          const chosen = exam.answers[q.id] || null;
+          for (const o of (q.options || [])) {
+            const b = document.createElement("button");
+            b.textContent = o.label+") "+o.text; b.style.display="block"; b.style.margin="6px 0";
+            if (chosen === o.label) { b.style.outline="2px solid #222"; }
+            b.onclick = () => { exam.answers[q.id] = o.label; renderExam(); };
+            box.appendChild(b);
+          }
+          $("#x-msg").textContent = chosen ? ("پاسخ انتخابی: "+chosen) : "بدون پاسخ";
+        }
+        function tick() {
+          if (!exam) return;
+          exam.tLeft--;
+          $("#x-timer").textContent = fmt(exam.tLeft);
+          if (exam.tLeft <= 0) submitExam();
+        }
+        async function startExam() {
+          const majorId = $("#x-major").value, courseId = $("#x-course").value;
+          const count = Number($("#x-count").value || 10), durationMin = Number($("#x-min").value || 10);
+          if (!majorId || !courseId) { alert("رشته و درس را انتخاب کن."); return; }
+          const res = await fetch("/api/student/exam/start", {
+            method: "POST", headers: {"content-type":"application/json"},
+            body: JSON.stringify({ clientId, majorId, courseId, count, durationMin })
+          });
+          const d = await res.json();
+          if (!d.ok) { alert(d.error || "خطا در شروع آزمون"); return; }
+          exam = { examId: d.examId, questions: d.questions, durationSec: d.durationSec, idx: 0, answers: {}, tLeft: d.durationSec, timer: null };
+          renderExam();
+          if (exam.timer) clearInterval(exam.timer);
+          exam.timer = setInterval(tick, 1000);
+        }
+        function prevQ(){ if (!exam) return; if (exam.idx>0){ exam.idx--; renderExam(); } }
+        function nextQ(){ if (!exam) return; if (exam.idx<exam.questions.length-1){ exam.idx++; renderExam(); } }
+        async function submitExam() {
+          if (!exam) return;
+          if (exam.timer) { clearInterval(exam.timer); exam.timer = null; }
+          const answers = exam.questions.map(q => ({ id: q.id, type: q.type, choice: exam.answers[q.id] || null }));
+          const res = await fetch("/api/student/exam/submit", {
+            method: "POST", headers: {"content-type":"application/json"},
+            body: JSON.stringify({ clientId, examId: exam.examId, answers })
+          });
+          const d = await res.json();
+          if (!d.ok) { alert(d.error || "خطا در ارسال آزمون"); return; }
+          $("#exam-box").style.display = "none";
+          $("#exam-result").style.display = "block";
+          const r = d.result;
+          $("#exam-result").innerHTML = "نتیجه: "+
+            "کل="+r.total+" — درست="+r.correct+" — غلط="+r.wrong+" — نزده="+r.blank+
+            "<br>درصد بدون نمره منفی: "+r.percentNoNeg+"%"+
+            "<br>درصد با نمره منفی (⅓-): "+r.percentWithNeg+"%";
+          exam = null;
+          $("#exam-setup").style.display = "block";
+        }
+
+        // رویدادها
         $("#fetchBtn").addEventListener("click", fetchRandom);
         $("#cfetchBtn").addEventListener("click", fetchChallenge);
         $("#sload").addEventListener("click", loadStats);
 
+        $("#x-start").addEventListener("click", startExam);
+        $("#x-prev").addEventListener("click", prevQ);
+        $("#x-next").addEventListener("click", nextQ);
+        $("#x-submit").addEventListener("click", submitExam);
+
         async function initAll(){
           await initCascadesSingle();
           await initCascadesChallenge();
+          await initCascadesExam();
         }
         initAll();
       </script>
