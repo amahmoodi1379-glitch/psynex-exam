@@ -507,6 +507,49 @@ export async function gradeExam(
   return res;
 }
 
+// -------- Exam submission & review (KV) --------
+export type ExamAnswer = { id: string; type: QuestionType; choice: "A"|"B"|"C"|"D"|null };
+export type ExamSubmission = { id: string; clientId: string; examId: string; answers: ExamAnswer[]; submittedAt: number };
+
+const examAnsKey = (clientId: string, examId: string) => `examans:${clientId}:${examId}`;
+
+export async function saveExamSubmission(env:any, clientId:string, examId:string, answers: ExamAnswer[]): Promise<void> {
+  const sub: ExamSubmission = { id: examId, clientId, examId, answers, submittedAt: Date.now() };
+  await env.DATA.put(examAnsKey(clientId, examId), JSON.stringify(sub));
+}
+
+export async function getExamReview(env:any, clientId:string, examId:string): Promise<Array<{
+  id: string; type: QuestionType; stem: string; options: Choice[]; correctLabel?: "A"|"B"|"C"|"D";
+  expl?: string | null; userChoice: "A"|"B"|"C"|"D"|null; isCorrect: boolean|null;
+}>> {
+  const raw = await env.DATA.get(examKey(clientId, examId));
+  if (!raw) throw new Error("exam_not_found");
+  const draft: ExamDraft = JSON.parse(raw);
+
+  const ansRaw = await env.DATA.get(examAnsKey(clientId, examId));
+  const answers: ExamAnswer[] = ansRaw ? (JSON.parse(ansRaw).answers || []) : [];
+  const amap = new Map(answers.map(a => [a.id, a.choice]));
+
+  const out: Array<{
+    id: string; type: QuestionType; stem: string; options: Choice[]; correctLabel?: "A"|"B"|"C"|"D";
+    expl?: string | null; userChoice: "A"|"B"|"C"|"D"|null; isCorrect: boolean|null;
+  }> = [];
+
+  for (const it of draft.items) {
+    const q = await getQuestion(env, it.type as QuestionType, it.id);
+    if (!q) continue;
+    const choice = amap.get(it.id) ?? null;
+    const isCorrect = choice ? (q.correctLabel === choice) : null;
+    out.push({
+      id: q.id, type: q.type, stem: q.stem, options: q.options || [],
+      correctLabel: q.correctLabel, expl: q.expl || null,
+      userChoice: choice, isCorrect
+    });
+  }
+  return out;
+}
+
+
 
 
 
