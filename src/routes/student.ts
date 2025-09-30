@@ -1,10 +1,13 @@
 import { html, json, page } from "../lib/http";
-import { queryRandomQuestion, getQuestion, recordAnswer, upsertRating, chooseChallengeQuestion } from "../lib/dataStore";
+import {
+  queryRandomQuestion, getQuestion, recordAnswer, upsertRating,
+  chooseChallengeQuestion, listAnswersByClient, aggregateStatsFromLogs
+} from "../lib/dataStore";
 
 export function routeStudent(req: Request, url: URL, env?: any): Response | null {
   const p = url.pathname;
 
-  // --- API: سؤال تصادفی (تک سؤال‌ها) ---
+  // --- API: سؤال تصادفی ---
   if (p === "/api/student/random" && req.method === "GET") {
     return (async () => {
       const type = ((url.searchParams.get("type") || "konkur") as "konkur"|"talifi");
@@ -30,7 +33,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
     })();
   }
 
-  // --- API: جواب + ثبت لاگ + امتیاز ---
+  // --- API: جواب + لاگ + امتیاز ---
   if (p === "/api/student/answer" && req.method === "POST") {
     return (async () => {
       try {
@@ -60,7 +63,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
     })();
   }
 
-  // --- API: سؤال چالشی بعدی ---
+  // --- API: سؤال چالشی ---
   if (p === "/api/student/challenge-next" && req.method === "GET") {
     return (async () => {
       const clientId = url.searchParams.get("clientId") || "";
@@ -86,19 +89,36 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
     })();
   }
 
-  // --- صفحه دانشجو با دو تب: تک‌سؤال‌ها + چالش‌ها ---
+  // --- API: آمار ---
+  if (p === "/api/student/stats" && req.method === "GET") {
+    return (async () => {
+      const clientId = url.searchParams.get("clientId") || "";
+      const window = url.searchParams.get("window") || "7d"; // 24h,3d,7d,1m,3m,6m,all
+      if (!clientId) return json({ ok: false, error: "clientId required" }, 400);
+      if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+      const logs = await listAnswersByClient(env, clientId, 1000); // تا 1000 لاگ اخیر کافی است
+      const stats = aggregateStatsFromLogs(logs, window);
+      return json({ ok: true, data: stats });
+    })();
+  }
+
+  // --- صفحه دانشجو با 3 تب: تک‌سؤال‌ها، چالش‌ها، آمار ---
   if (p === "/student") {
     const body = `
       <style>
         .tabbar button{margin:0 4px;padding:6px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer}
         .tabbar button.active{background:#222;color:#fff;border-color:#222}
         .tabsec{display:none}
+        .bars{display:flex;align-items:flex-end;gap:2px;height:120px;border-bottom:1px solid #eee;margin-top:8px}
+        .bar{width:6px;background:#888}
+        .muted{color:#666}
       </style>
 
       <h1>صفحه دانشجو</h1>
       <div class="tabbar">
         <button data-tab="tab-single" class="active">تک‌سؤال‌ها</button>
         <button data-tab="tab-challenges">چالش‌ها</button>
+        <button data-tab="tab-stats">آمار</button>
       </div>
 
       <!-- تک‌سؤال‌ها -->
@@ -139,7 +159,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
       <!-- چالش‌ها -->
       <div class="card tabsec" id="tab-challenges">
-        <b>سؤال‌های چالشی (سؤالهایی که قبلاً غلط زده‌ای)</b>
+        <b>سؤال‌های چالشی (سؤال‌هایی که قبلاً غلط زده‌ای)</b>
         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:end">
           <div><label>نوع</label>
             <select id="ctype">
@@ -171,6 +191,26 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         </div>
       </div>
 
+      <!-- آمار -->
+      <div class="card tabsec" id="tab-stats">
+        <b>آمار پاسخ‌ها</b>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+          <label>بازه:</label>
+          <select id="win">
+            <option value="24h">24 ساعت گذشته</option>
+            <option value="3d">3 روز گذشته</option>
+            <option value="7d" selected>7 روز گذشته</option>
+            <option value="1m">1 ماه گذشته</option>
+            <option value="3m">3 ماه گذشته</option>
+            <option value="6m">6 ماه گذشته</option>
+            <option value="all">کل زمان</option>
+          </select>
+          <button id="sload">بارگذاری آمار</button>
+        </div>
+        <div id="sout" style="margin-top:8px" class="muted">برای مشاهده، «بارگذاری آمار» را بزن.</div>
+        <div id="chart" class="bars"></div>
+      </div>
+
       <script>
         const $ = s => document.querySelector(s);
 
@@ -194,7 +234,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         }
         const clientId = getClientId();
 
-        // helper برای پرکردن دراپ‌داون‌ها
+        // helper برای دراپ‌داون‌ها
         async function fill(id, url, v="id", l="name", allowEmpty=true) {
           const el = $("#"+id); el.innerHTML = allowEmpty ? "<option value=''>--</option>" : "";
           const res = await fetch(url); const items = await res.json();
@@ -248,7 +288,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           await upd();
         }
 
-        // جلوگیری ساده از تکرار در نشست (فقط تک‌سؤال‌ها)
+        // جلوگیری ساده از تکرار در نشست (تک‌سؤال‌ها)
         function seenAdd(id) {
           const k="seenIds"; const s = sessionStorage.getItem(k);
           const arr = s? JSON.parse(s): [];
@@ -373,8 +413,41 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           if (mode==="single") { seenAdd(q.id); }
         }
 
+        // آمار
+        function bars(container, series) {
+          const el = $("#"+container);
+          el.innerHTML = "";
+          if (!series || !series.points || !series.points.length) return;
+          const max = Math.max(...series.points.map(p => p.total), 1);
+          for (const p of series.points) {
+            const h = Math.round((p.total / max) * 120);
+            const bar = document.createElement("div");
+            bar.className = "bar";
+            bar.style.height = h+"px";
+            bar.title = new Date(p.t).toLocaleString() + " → " + p.total;
+            el.appendChild(bar);
+          }
+        }
+        async function loadStats() {
+          const win = $("#win").value;
+          const res = await fetch("/api/student/stats?clientId="+encodeURIComponent(clientId)+"&window="+encodeURIComponent(win));
+          const d = await res.json();
+          if (!d.ok) { $("#sout").textContent = "خطا در دریافت آمار"; return; }
+          const s = d.data;
+          $("#sout").innerHTML = [
+            "کل پاسخ‌ها: "+s.total,
+            "درست: "+s.correct,
+            "غلط: "+s.wrong,
+            (s.acc!=null ? "دقت: "+s.acc+"%" : "")
+          ].filter(Boolean).join(" — ")
+          + "<br/>[کنکور] کل: "+s.byType.konkur.total+"، دقت: "+(s.byType.konkur.acc??"-")+"%"
+          + " | [تالیفی] کل: "+s.byType.talifi.total+"، دقت: "+(s.byType.talifi.acc??"-")+"%";
+          bars("chart", s.series);
+        }
+
         $("#fetchBtn").addEventListener("click", fetchRandom);
         $("#cfetchBtn").addEventListener("click", fetchChallenge);
+        $("#sload").addEventListener("click", loadStats);
 
         async function initAll(){
           await initCascadesSingle();
