@@ -334,6 +334,9 @@ export function aggregateStatsFromLogs(
 }
 
 // ---------- Exams (KV) ----------
+
+export type ExamMode = "konkur" | "talifi" | "mixed";
+
 export type ExamQuestionView = { id: string; type: QuestionType; stem: string; options: Choice[] };
 export type ExamDraft = {
   id: string;
@@ -363,9 +366,9 @@ function shuffle<T>(a: T[]): T[] { for (let i=a.length-1;i>0;i--){ const j=Math.
 export async function sampleQuestions(
   env: any,
   type: QuestionType, // "konkur" | "talifi"
-  filters: Partial<Pick<Question, "majorId"|"courseId">>,
+  filters: Partial<Pick<Question, "majorId"|"courseId"|"sourceId"|"chapterId">>,
   need: number,
-  scanCap = 1500
+  scanCap = 2000
 ): Promise<Question[]> {
   const prefixKey = `q:${type}:`;
   let cursor: string|undefined = undefined;
@@ -376,8 +379,10 @@ export async function sampleQuestions(
       const raw = await env.DATA.get(k.name);
       if (!raw) continue;
       const q: Question = JSON.parse(raw);
-      if (filters.majorId && String(q.majorId) !== String(filters.majorId)) continue;
-      if (filters.courseId && String(q.courseId) !== String(filters.courseId)) continue;
+      if (filters.majorId   && String(q.majorId)   !== String(filters.majorId)) continue;
+      if (filters.courseId  && String(q.courseId)  !== String(filters.courseId)) continue;
+      if (filters.sourceId  && String(q.sourceId||"")  !== String(filters.sourceId)) continue;
+      if (filters.chapterId && String(q.chapterId||"") !== String(filters.chapterId)) continue;
       candidates.push(q);
     }
     if (res.list_complete) break;
@@ -385,36 +390,70 @@ export async function sampleQuestions(
     cursor = res.cursor;
   }
   if (!candidates.length) return [];
-  shuffle(candidates);
+  // شافل و بُرش
+  for (let i=candidates.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [candidates[i],candidates[j]]=[candidates[j],candidates[i]]; }
   return candidates.slice(0, need);
 }
+
 
 export async function createExamDraft(
   env: any,
   clientId: string,
-  mode: "konkur",
-  filters: Partial<Pick<Question, "majorId"|"courseId">>,
+  mode: ExamMode, // "konkur" | "talifi" | "mixed"
+  filters: Partial<Pick<Question, "majorId"|"courseId"|"sourceId"|"chapterId">>,
   count: number,
   durationSec: number
 ): Promise<{ id: string; questions: ExamQuestionView[]; durationSec: number }> {
-  const picked = await sampleQuestions(env, "konkur", filters, count);
-  if (!picked.length) throw new Error("no_questions");
+  let picked: Question[] = [];
+
+  if (mode === "konkur") {
+    const kk = await sampleQuestions(env, "konkur", { majorId: filters.majorId, courseId: filters.courseId }, count);
+    if (kk.length < 1) throw new Error("no_questions");
+    picked = kk;
+
+  } else if (mode === "talifi") {
+    const tt = await sampleQuestions(env, "talifi", {
+      majorId: filters.majorId, courseId: filters.courseId, sourceId: filters.sourceId, chapterId: filters.chapterId
+    }, count);
+    if (tt.length < 1) throw new Error("no_questions");
+    picked = tt;
+
+  } else { // mixed
+    // نسبت کنکور 10%..60%
+    const p = 0.10 + Math.random() * 0.50;
+    let needK = Math.floor(count * p);
+    needK = Math.max(1, Math.min(count-1, needK)); // هر دو نوع حاضر باشند
+
+    const kPart = await sampleQuestions(env, "konkur", { majorId: filters.majorId, courseId: filters.courseId }, needK);
+    const needT = count - kPart.length;
+    const tPart = await sampleQuestions(env, "talifi", {
+      majorId: filters.majorId, courseId: filters.courseId, sourceId: filters.sourceId, chapterId: filters.chapterId
+    }, needT);
+
+    if (kPart.length + tPart.length < 1) throw new Error("no_questions");
+    // اگر کمتر از count شد، همان تعداد موجود را می‌گیریم (به‌جای ارور)
+    picked = [...kPart, ...tPart].slice(0, count);
+  }
+
+  // ساخت پیش‌نویس
   const examId = crypto.randomUUID();
   const draft: ExamDraft = {
     id: examId,
     clientId,
-    mode,
+    mode: mode === "mixed" ? "konkur" : mode, // برای سازگاری با type QuestionType هنگام grade (آیتم‌ها type خود را دارند)
     filters,
     items: picked.map(q => ({ id: q.id, type: q.type, correctLabel: q.correctLabel })),
     createdAt: Date.now(),
     durationSec
   };
   await env.DATA.put(examKey(clientId, examId), JSON.stringify(draft));
+
   const questions: ExamQuestionView[] = picked.map(q => ({
     id: q.id, type: q.type, stem: q.stem, options: (q.options || [])
   }));
   return { id: examId, questions, durationSec };
 }
+
 
 export async function gradeExam(
   env: any,
