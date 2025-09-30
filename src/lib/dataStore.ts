@@ -333,6 +333,142 @@ export function aggregateStatsFromLogs(
   return { total: sum.total, correct: sum.correct, wrong: sum.wrong, acc: sum.acc, byType, series };
 }
 
+// ---------- Exams (KV) ----------
+export type ExamQuestionView = { id: string; type: QuestionType; stem: string; options: Choice[] };
+export type ExamDraft = {
+  id: string;
+  clientId: string;
+  mode: "konkur"; // فعلاً فقط کنکور
+  filters: Partial<Pick<Question, "majorId"|"courseId">>;
+  items: Array<{ id: string; type: QuestionType; correctLabel?: "A"|"B"|"C"|"D" }>;
+  createdAt: number;
+  durationSec: number;
+};
+export type ExamResult = {
+  id: string;
+  total: number;
+  correct: number;
+  wrong: number;
+  blank: number;
+  percentNoNeg: number;
+  percentWithNeg: number;
+  finishedAt: number;
+};
+
+const examKey = (clientId: string, examId: string) => `exam:${clientId}:${examId}`;
+const examResKey = (clientId: string, examId: string) => `examres:${clientId}:${examId}`;
+
+function shuffle<T>(a: T[]): T[] { for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+export async function sampleQuestions(
+  env: any,
+  type: QuestionType, // "konkur" | "talifi"
+  filters: Partial<Pick<Question, "majorId"|"courseId">>,
+  need: number,
+  scanCap = 1500
+): Promise<Question[]> {
+  const prefixKey = `q:${type}:`;
+  let cursor: string|undefined = undefined;
+  const candidates: Question[] = [];
+  while (true) {
+    const res = await env.DATA.list({ prefix: prefixKey, limit: 1000, cursor });
+    for (const k of res.keys) {
+      const raw = await env.DATA.get(k.name);
+      if (!raw) continue;
+      const q: Question = JSON.parse(raw);
+      if (filters.majorId && String(q.majorId) !== String(filters.majorId)) continue;
+      if (filters.courseId && String(q.courseId) !== String(filters.courseId)) continue;
+      candidates.push(q);
+    }
+    if (res.list_complete) break;
+    if (candidates.length >= scanCap) break;
+    cursor = res.cursor;
+  }
+  if (!candidates.length) return [];
+  shuffle(candidates);
+  return candidates.slice(0, need);
+}
+
+export async function createExamDraft(
+  env: any,
+  clientId: string,
+  mode: "konkur",
+  filters: Partial<Pick<Question, "majorId"|"courseId">>,
+  count: number,
+  durationSec: number
+): Promise<{ id: string; questions: ExamQuestionView[]; durationSec: number }> {
+  const picked = await sampleQuestions(env, "konkur", filters, count);
+  if (!picked.length) throw new Error("no_questions");
+  const examId = crypto.randomUUID();
+  const draft: ExamDraft = {
+    id: examId,
+    clientId,
+    mode,
+    filters,
+    items: picked.map(q => ({ id: q.id, type: q.type, correctLabel: q.correctLabel })),
+    createdAt: Date.now(),
+    durationSec
+  };
+  await env.DATA.put(examKey(clientId, examId), JSON.stringify(draft));
+  const questions: ExamQuestionView[] = picked.map(q => ({
+    id: q.id, type: q.type, stem: q.stem, options: (q.options || [])
+  }));
+  return { id: examId, questions, durationSec };
+}
+
+export async function gradeExam(
+  env: any,
+  clientId: string,
+  examId: string,
+  answers: Array<{ id: string; type: QuestionType; choice: "A"|"B"|"C"|"D"|null }>
+): Promise<ExamResult> {
+  const raw = await env.DATA.get(examKey(clientId, examId));
+  if (!raw) throw new Error("exam_not_found");
+  const draft: ExamDraft = JSON.parse(raw);
+
+  let correct = 0, wrong = 0, blank = 0;
+  const ansMap = new Map(answers.map(a => [a.id, a]));
+
+  // نمره منفی 1/3
+  const neg = 1/3;
+
+  for (const it of draft.items) {
+    const a = ansMap.get(it.id);
+    if (!a || !a.choice) { blank++; continue; }
+    if (it.correctLabel && a.choice === it.correctLabel) correct++; else wrong++;
+  }
+  const total = draft.items.length;
+  const percentNoNeg = total ? Math.round((correct / total) * 1000)/10 : 0;
+  const withNeg = Math.max(0, (correct - wrong * neg) / total);
+  const percentWithNeg = Math.round(withNeg * 1000)/10;
+
+  const res: ExamResult = {
+    id: examId, total, correct, wrong, blank,
+    percentNoNeg, percentWithNeg, finishedAt: Date.now()
+  };
+  await env.DATA.put(examResKey(clientId, examId), JSON.stringify(res));
+
+  // ثبت در لاگ پاسخ‌ها برای آمار/چالش (استفاده از recordAnswer قبلاً تعریف شده)
+  try {
+    for (const it of draft.items) {
+      const a = ansMap.get(it.id);
+      const choice = (a && a.choice) ? a.choice : null;
+      if (choice) {
+        const q = await getQuestion(env, it.type as QuestionType, it.id);
+        const isCorrect = !!q && q.correctLabel === choice;
+        await recordAnswer(env, {
+          clientId, qid: it.id, type: it.type as QuestionType,
+          choice: choice as any, correct: isCorrect, at: Date.now(),
+          filters: draft.filters
+        });
+      }
+    }
+  } catch { /* ignore */ }
+
+  return res;
+}
+
+
 
 
 
