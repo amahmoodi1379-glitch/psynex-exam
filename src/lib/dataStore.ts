@@ -235,5 +235,104 @@ export async function chooseChallengeQuestion(
   return chosen.q;
 }
 
+// ---------- Stats (KV-based) ----------
+export type StatsSummary = {
+  total: number;
+  correct: number;
+  wrong: number;
+  acc?: number; // accuracy %
+  byType: {
+    konkur: { total: number; correct: number; wrong: number; acc?: number };
+    talifi: { total: number; correct: number; wrong: number; acc?: number };
+    qa:      { total: number; correct: number; wrong: number; acc?: number };
+  };
+  series?: { bucketMs: number; start: number; points: Array<{ t: number; total: number; correct: number; wrong: number }> };
+};
+
+function msForWindow(win: string): number | null {
+  const d = 24 * 60 * 60 * 1000;
+  if (win === "24h") return d;
+  if (win === "3d")  return 3 * d;
+  if (win === "7d")  return 7 * d;
+  if (win === "1m")  return 30 * d;
+  if (win === "3m")  return 90 * d;
+  if (win === "6m")  return 180 * d;
+  if (win === "all") return null;
+  return 7 * d; // پیش‌فرض
+}
+
+function addAcc(o: { total: number; correct: number; wrong: number }) {
+  o.acc = o.total ? Math.round((o.correct / o.total) * 1000) / 10 : undefined;
+}
+
+export function aggregateStatsFromLogs(
+  logs: StudentAnswerLog[],
+  window: string,
+  nowMs = Date.now(),
+  desiredBuckets = 20
+): StatsSummary {
+  const wms = msForWindow(window);
+  let filtered = logs;
+  if (wms != null) {
+    const start = nowMs - wms;
+    filtered = logs.filter(l => l.at >= start);
+  }
+
+  const sum = { total: 0, correct: 0, wrong: 0 };
+  const byType = {
+    konkur: { total: 0, correct: 0, wrong: 0 },
+    talifi: { total: 0, correct: 0, wrong: 0 },
+    qa:     { total: 0, correct: 0, wrong: 0 },
+  };
+
+  for (const l of filtered) {
+    sum.total++;
+    if (l.correct) sum.correct++; else sum.wrong++;
+    const bt = byType[l.type] || byType.qa;
+    bt.total++;
+    if (l.correct) bt.correct++; else bt.wrong++;
+  }
+
+  addAcc(sum);
+  addAcc(byType.konkur);
+  addAcc(byType.talifi);
+  addAcc(byType.qa);
+
+  // سری زمانی سبک (حداکثر ~20 باکت)
+  let series: StatsSummary["series"] = undefined;
+  let bucketMs = 0, start = 0;
+
+  if (wms != null) {
+    bucketMs = Math.max(Math.floor(wms / desiredBuckets), 60 * 60 * 1000); // حداقل 1h
+    start = nowMs - wms;
+  } else if (filtered.length) {
+    // حالت all: بر اساس بازه‌ی واقعی لاگ‌ها
+    const minAt = Math.min(...filtered.map(l => l.at));
+    const span = Math.max(nowMs - minAt, 24 * 60 * 60 * 1000);
+    bucketMs = Math.max(Math.floor(span / desiredBuckets), 60 * 60 * 1000);
+    start = nowMs - span;
+  }
+
+  if (bucketMs > 0) {
+    const buckets: Array<{ t: number; total: number; correct: number; wrong: number }> = [];
+    const n = Math.ceil((nowMs - start) / bucketMs);
+    for (let i = 0; i < n; i++) {
+      buckets.push({ t: start + i * bucketMs, total: 0, correct: 0, wrong: 0 });
+    }
+    for (const l of filtered) {
+      const idx = Math.floor((l.at - start) / bucketMs);
+      if (idx >= 0 && idx < buckets.length) {
+        const b = buckets[idx];
+        b.total++;
+        if (l.correct) b.correct++; else b.wrong++;
+      }
+    }
+    series = { bucketMs, start, points: buckets };
+  }
+
+  return { total: sum.total, correct: sum.correct, wrong: sum.wrong, acc: sum.acc, byType, series };
+}
+
+
 
 
