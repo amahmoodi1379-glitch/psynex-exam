@@ -1,8 +1,9 @@
+// src/routes/student.ts
 import { html, json, page } from "../lib/http";
 import {
   queryRandomQuestion, getQuestion, recordAnswer, upsertRating,
   chooseChallengeQuestion, listAnswersByClient, aggregateStatsFromLogs,
-  createExamDraft, gradeExam
+  createExamDraft, gradeExam, getExamReview
 } from "../lib/dataStore";
 
 export function routeStudent(req: Request, url: URL, env?: any): Response | null {
@@ -34,7 +35,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
     })();
   }
 
-  // --- API: جواب + لاگ + امتیاز ---
+  // --- API: ثبت پاسخ یک سؤال (تک‌سؤال/چالش) + امتیاز ---
   if (p === "/api/student/answer" && req.method === "POST") {
     return (async () => {
       try {
@@ -64,7 +65,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
     })();
   }
 
-  // --- API: سؤال چالشی ---
+  // --- API: سؤال چالشی بعدی ---
   if (p === "/api/student/challenge-next" && req.method === "GET") {
     return (async () => {
       const clientId = url.searchParams.get("clientId") || "";
@@ -94,7 +95,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   if (p === "/api/student/stats" && req.method === "GET") {
     return (async () => {
       const clientId = url.searchParams.get("clientId") || "";
-      const window = url.searchParams.get("window") || "7d";
+      const window = url.searchParams.get("window") || "7d"; // 24h,3d,7d,1m,3m,6m,all
       if (!clientId) return json({ ok: false, error: "clientId required" }, 400);
       if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
       const logs = await listAnswersByClient(env, clientId, 1000);
@@ -103,7 +104,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
     })();
   }
 
-  // --- API: شروع آزمون (mode: konkur | mixed | talifi) ---
+  // --- API: شروع آزمون (konkur | mixed | talifi) ---
   if (p === "/api/student/exam/start" && req.method === "POST") {
     return (async () => {
       try {
@@ -158,7 +159,23 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
     })();
   }
 
-  // --- صفحه دانشجو با 4 تب ---
+  // --- API: پاسخنامه آزمون ---
+  if (p === "/api/student/exam/review" && req.method === "GET") {
+    return (async () => {
+      const clientId = url.searchParams.get("clientId") || "";
+      const examId = url.searchParams.get("examId") || "";
+      if (!clientId || !examId) return json({ ok: false, error: "bad_request" }, 400);
+      if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+      try {
+        const review = await getExamReview(env, clientId, examId);
+        return json({ ok: true, data: review });
+      } catch (e:any) {
+        return json({ ok: false, error: String(e?.message || e) }, 404);
+      }
+    })();
+  }
+
+  // --- صفحه دانشجو (۴ تب + پاسخنامه) ---
   if (p === "/student") {
     const body = `
       <style>
@@ -202,12 +219,14 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         <div class="card" id="qbox" style="display:none">
           <div id="stem" style="font-weight:600;margin-bottom:8px"></div>
           <div id="opts"></div>
+
           <div style="margin-top:10px">
             <span>امتیاز کیفیت (اختیاری): </span>
             <select id="quality"><option value="">--</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
             <span style="margin-right:12px">سختی (اختیاری): </span>
             <select id="difficulty"><option value="">--</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
           </div>
+
           <div id="result" style="margin-top:10px" class="muted"></div>
           <button id="nextBtn" style="margin-top:8px">سؤال بعدی</button>
         </div>
@@ -234,12 +253,14 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         <div class="card" id="cbox" style="display:none">
           <div id="cstem" style="font-weight:600;margin-bottom:8px"></div>
           <div id="copts"></div>
+
           <div style="margin-top:10px">
             <span>کیفیت (اختیاری): </span>
             <select id="cquality"><option value="">--</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
             <span style="margin-right:12px">سختی (اختیاری): </span>
             <select id="cdifficulty"><option value="">--</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
           </div>
+
           <div id="cresult" style="margin-top:10px" class="muted"></div>
           <button id="cnextBtn" style="margin-top:8px">چالشی بعدی</button>
         </div>
@@ -278,7 +299,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
               </select>
             </div>
             <div><label>رشته (الزامی)</label> <select id="x-major" required></select></div>
-            <div id="x-course-wrap"><label>درس ${/* برای konkur/mixed اجباری */""}</label> <select id="x-course"></select></div>
+            <div id="x-course-wrap"><label>درس</label> <select id="x-course"></select></div>
             <div id="x-source-wrap" class="hide"><label>منبع</label> <select id="x-source"></select></div>
             <div id="x-chapter-wrap" class="hide"><label>فصل</label> <select id="x-chapter"></select></div>
             <div><label>تعداد سؤال</label> <input id="x-count" type="number" min="5" max="50" value="10" style="width:90px"></div>
@@ -304,6 +325,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         </div>
 
         <div id="exam-result" style="display:none" class="muted"></div>
+        <button id="x-show-review" style="display:none; margin-top:8px">مشاهده پاسخنامه</button>
+        <div id="review-box" style="display:none; margin-top:8px"></div>
       </div>
 
       <script>
@@ -321,10 +344,15 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         if (location.hash && document.getElementById(location.hash.slice(1))) showTab(location.hash.slice(1));
 
         // clientId دائمی
-        function getClientId(){ const k="psx_cid"; let v = localStorage.getItem(k); if (!v) { v = crypto.randomUUID(); localStorage.setItem(k, v); } return v; }
+        function getClientId(){
+          const k="psx_cid";
+          let v = localStorage.getItem(k);
+          if (!v) { v = crypto.randomUUID(); localStorage.setItem(k, v); }
+          return v;
+        }
         const clientId = getClientId();
 
-        // helper دراپ‌داون‌ها
+        // helper برای دراپ‌داون‌ها
         async function fill(id, url, v="id", l="name", allowEmpty=true) {
           const el = $("#"+id); el.innerHTML = allowEmpty ? "<option value=''>--</option>" : "";
           const res = await fetch(url); const items = await res.json();
@@ -346,23 +374,49 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             await fill("chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
           };
           $("#major").addEventListener("change", upd);
-          $("#course").addEventListener("change", async () => { const cid = $("#course").value || ""; await fill("source", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid)); });
-          $("#source").addEventListener("change", async () => { const sid = $("#source").value || ""; await fill("chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid)); });
-          await new Promise(r=>setTimeout(r,100)); await upd();
+          $("#course").addEventListener("change", async () => {
+            const cid = $("#course").value || "";
+            await fill("source", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
+          });
+          $("#source").addEventListener("change", async () => {
+            const sid = $("#source").value || "";
+            await fill("chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+          });
+          await new Promise(r=>setTimeout(r,100));
+          await upd();
         }
 
-        function seenAdd(id) { const k="seenIds"; const s = sessionStorage.getItem(k); const arr = s? JSON.parse(s): []; if (!arr.includes(id)) arr.push(id); sessionStorage.setItem(k, JSON.stringify(arr.slice(-50))); }
-        function seenHas(id) { const s = sessionStorage.getItem("seenIds"); if (!s) return false; return JSON.parse(s).includes(id); }
+        function seenAdd(id) {
+          const k="seenIds"; const s = sessionStorage.getItem(k);
+          const arr = s? JSON.parse(s): [];
+          if (!arr.includes(id)) arr.push(id);
+          sessionStorage.setItem(k, JSON.stringify(arr.slice(-50)));
+        }
+        function seenHas(id) {
+          const s = sessionStorage.getItem("seenIds");
+          if (!s) return false;
+          return JSON.parse(s).includes(id);
+        }
 
-        function currentFiltersSingle(){ return {
-          majorId: $("#major").value || undefined,
-          degreeId: $("#degree").value || undefined,
-          ministryId: $("#ministry").value || undefined,
-          examYearId: $("#examYear").value || undefined,
-          courseId: $("#course").value || undefined,
-          sourceId: $("#source").value || undefined,
-          chapterId: $("#chapter").value || undefined
-        };}
+        function currentFiltersSingle(){
+          return {
+            majorId: $("#major").value || undefined,
+            degreeId: $("#degree").value || undefined,
+            ministryId: $("#ministry").value || undefined,
+            examYearId: $("#examYear").value || undefined,
+            courseId: $("#course").value || undefined,
+            sourceId: $("#source").value || undefined,
+            chapterId: $("#chapter").value || undefined
+          };
+        }
+        function currentFiltersChallenge(){
+          return {
+            majorId: $("#cmajor").value || undefined,
+            courseId: $("#ccourse").value || undefined,
+            sourceId: $("#csource").value || undefined,
+            chapterId: $("#cchapter").value || undefined
+          };
+        }
 
         async function fetchRandom() {
           const type = $("#type").value;
@@ -370,40 +424,39 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           if (!majorId) { alert("رشته را انتخاب کن."); return; }
           const params = new URLSearchParams({
             type, majorId,
-            degreeId: $("#degree").value, ministryId: $("#ministry").value, examYearId: $("#examYear").value,
-            courseId: $("#course").value, sourceId: $("#source").value, chapterId: $("#chapter").value
+            degreeId: $("#degree").value,
+            ministryId: $("#ministry").value,
+            examYearId: $("#examYear").value,
+            courseId: $("#course").value,
+            sourceId: $("#source").value,
+            chapterId: $("#chapter").value
           });
           for (let tries=0; tries<5; tries++) {
             const r = await fetch("/api/student/random?"+params.toString());
             const d = await r.json();
             if (!d.ok) { $("#qbox").style.display="none"; alert("سؤالی با این فیلتر پیدا نشد."); return; }
-            const q = d.data; if (seenHas(q.id) && tries < 4) continue; renderSingle(q); return;
+            const q = d.data;
+            if (seenHas(q.id) && tries < 4) continue;
+            renderSingle(q); return;
           }
           alert("سؤال تازه‌ای پیدا نشد. فیلتر را عوض کن.");
         }
+
         function renderSingle(q) {
-          $("#qbox").style.display="block"; $("#stem").textContent = q.stem;
+          $("#qbox").style.display="block";
+          $("#stem").textContent = q.stem;
           const box = $("#opts"); box.innerHTML = "";
           for (const o of (q.options || [])) {
-            const btn = document.createElement("button"); btn.textContent = o.label + ") " + o.text; btn.style.display="block"; btn.style.margin="6px 0";
-            btn.onclick = () => answer(q, o.label, "single"); box.appendChild(btn);
+            const btn = document.createElement("button");
+            btn.textContent = o.label + ") " + o.text;
+            btn.style.display = "block";
+            btn.style.margin = "6px 0";
+            btn.onclick = () => answer(q, o.label, "single");
+            box.appendChild(btn);
           }
-          $("#result").textContent = ""; $("#nextBtn").onclick = () => fetchRandom(); $("#qbox").dataset.id = q.id; $("#qbox").dataset.type = q.type;
-        }
-        async function answer(q, choice, mode) {
-          const quality = Number((mode==="single" ? $("#quality").value : $("#cquality").value) || "") || undefined;
-          const difficulty = Number((mode==="single" ? $("#difficulty").value : $("#cdifficulty").value) || "") || undefined;
-          const filters = mode==="single" ? currentFiltersSingle() : currentFiltersChallenge();
-          const res = await fetch("/api/student/answer", {
-            method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id: q.id, type: q.type, choice, clientId, quality, difficulty, filters })
-          });
-          const d = await res.json();
-          const target = (mode==="single") ? "#result" : "#cresult";
-          if (!d.ok) { document.querySelector(target).textContent = "خطا."; return; }
-          const html = (d.correct? "✅ درست": "❌ غلط") + (d.correctLabel? " — گزینه صحیح: " + d.correctLabel : "") + (d.expl? "<div style='margin-top:6px'>"+d.expl+"</div>": "");
-          document.querySelector(target).innerHTML = html;
-          if (mode==="single") { seenAdd(q.id); }
+          $("#result").textContent = "";
+          $("#nextBtn").onclick = () => fetchRandom();
+          $("#qbox").dataset.id = q.id; $("#qbox").dataset.type = q.type;
         }
 
         // ---------- چالش‌ها ----------
@@ -418,41 +471,82 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
           };
           $("#cmajor").addEventListener("change", upd);
-          $("#ccourse").addEventListener("change", async () => { const cid = $("#ccourse").value || ""; await fill("csource", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid)); });
-          $("#csource").addEventListener("change", async () => { const sid = $("#csource").value || ""; await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid)); });
-          await new Promise(r=>setTimeout(r,100)); await upd();
+          $("#ccourse").addEventListener("change", async () => {
+            const cid = $("#ccourse").value || "";
+            await fill("csource", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
+          });
+          $("#csource").addEventListener("change", async () => {
+            const sid = $("#csource").value || "";
+            await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+          });
+          await new Promise(r=>setTimeout(r,100));
+          await upd();
         }
-        function currentFiltersChallenge(){ return {
-          majorId: $("#cmajor").value || undefined,
-          courseId: $("#ccourse").value || undefined,
-          sourceId: $("#csource").value || undefined,
-          chapterId: $("#cchapter").value || undefined
-        }; }
+
         async function fetchChallenge() {
-          const majorId = $("#cmajor").value; if (!majorId) { alert("رشته را انتخاب کن."); return; }
+          const majorId = $("#cmajor").value;
+          if (!majorId) { alert("رشته را انتخاب کن."); return; }
           const params = new URLSearchParams({
-            clientId, type: $("#ctype").value, majorId, courseId: $("#ccourse").value, sourceId: $("#csource").value, chapterId: $("#cchapter").value
+            clientId,
+            type: $("#ctype").value,
+            majorId,
+            courseId: $("#ccourse").value,
+            sourceId: $("#csource").value,
+            chapterId: $("#cchapter").value
           });
           const r = await fetch("/api/student/challenge-next?"+params.toString());
           const d = await r.json();
           if (!d.ok) { $("#cbox").style.display="none"; alert("سؤال چالشی پیدا نشد."); return; }
           renderChallenge(d.data);
         }
+
         function renderChallenge(q) {
-          $("#cbox").style.display="block"; $("#cstem").textContent = q.stem;
+          $("#cbox").style.display="block";
+          $("#cstem").textContent = q.stem;
           const box = $("#copts"); box.innerHTML = "";
           for (const o of (q.options || [])) {
-            const btn = document.createElement("button"); btn.textContent = o.label + ") " + o.text; btn.style.display="block"; btn.style.margin="6px 0";
-            btn.onclick = () => answer(q, o.label, "challenge"); box.appendChild(btn);
+            const btn = document.createElement("button");
+            btn.textContent = o.label + ") " + o.text;
+            btn.style.display = "block";
+            btn.style.margin = "6px 0";
+            btn.onclick = () => answer(q, o.label, "challenge");
+            box.appendChild(btn);
           }
-          $("#cresult").textContent = ""; $("#cnextBtn").onclick = () => fetchChallenge(); $("#cbox").dataset.id = q.id; $("#cbox").dataset.type = q.type;
+          $("#cresult").textContent = "";
+          $("#cnextBtn").onclick = () => fetchChallenge();
+          $("#cbox").dataset.id = q.id; $("#cbox").dataset.type = q.type;
+        }
+
+        async function answer(q, choice, mode) {
+          const quality = Number((mode==="single" ? $("#quality").value : $("#cquality").value) || "") || undefined;
+          const difficulty = Number((mode==="single" ? $("#difficulty").value : $("#cdifficulty").value) || "") || undefined;
+          const filters = mode==="single" ? currentFiltersSingle() : currentFiltersChallenge();
+          const res = await fetch("/api/student/answer", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id: q.id, type: q.type, choice, clientId, quality, difficulty, filters })
+          });
+          const d = await res.json();
+          const target = (mode==="single") ? "#result" : "#cresult";
+          if (!d.ok) { document.querySelector(target).textContent = "خطا."; return; }
+          const html = (d.correct? "✅ درست": "❌ غلط") + (d.correctLabel? " — گزینه صحیح: " + d.correctLabel : "") + (d.expl? "<div style='margin-top:6px'>"+d.expl+"</div>": "");
+          document.querySelector(target).innerHTML = html;
+          if (mode==="single") { seenAdd(q.id); }
         }
 
         // ---------- آمار ----------
         function bars(container, series) {
-          const el = $("#"+container); el.innerHTML = ""; if (!series || !series.points || !series.points.length) return;
+          const el = $("#"+container); el.innerHTML = "";
+          if (!series || !series.points || !series.points.length) return;
           const max = Math.max(...series.points.map(p => p.total), 1);
-          for (const p of series.points) { const h = Math.round((p.total / max) * 120); const bar = document.createElement("div"); bar.className = "bar"; bar.style.height = h+"px"; bar.title = new Date(p.t).toLocaleString() + " → " + p.total; el.appendChild(bar); }
+          for (const p of series.points) {
+            const h = Math.round((p.total / max) * 120);
+            const bar = document.createElement("div");
+            bar.className = "bar";
+            bar.style.height = h+"px";
+            bar.title = new Date(p.t).toLocaleString() + " → " + p.total;
+            el.appendChild(bar);
+          }
         }
         async function loadStats() {
           const win = $("#win").value;
@@ -461,7 +555,10 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           if (!d.ok) { $("#sout").textContent = "خطا در دریافت آمار"; return; }
           const s = d.data;
           $("#sout").innerHTML = [
-            "کل پاسخ‌ها: "+s.total, "درست: "+s.correct, "غلط: "+s.wrong, (s.acc!=null ? "دقت: "+s.acc+"%" : "")
+            "کل پاسخ‌ها: "+s.total,
+            "درست: "+s.correct,
+            "غلط: "+s.wrong,
+            (s.acc!=null ? "دقت: "+s.acc+"%" : "")
           ].filter(Boolean).join(" — ")
           + "<br/>[کنکور] کل: "+s.byType.konkur.total+"، دقت: "+(s.byType.konkur.acc??"-")+"%"
           + " | [تالیفی] کل: "+s.byType.talifi.total+"، دقت: "+(s.byType.talifi.acc??"-")+"%";
@@ -471,7 +568,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         // ---------- آزمون ----------
         async function initCascadesExam() {
           await fill("x-major", "/api/taxonomy/majors", "id", "name", false);
-          const updCourse = async () => {
+          const upd = async () => {
             const mid = $("#x-major").value || "";
             await fill("x-course", "/api/taxonomy/courses?majorId="+encodeURIComponent(mid), "id", "name", true);
             const cid = $("#x-course").value || "";
@@ -479,7 +576,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             const sid = $("#x-source").value || "";
             await fill("x-chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid), "id", "name", true);
           };
-          $("#x-major").addEventListener("change", updCourse);
+          $("#x-major").addEventListener("change", upd);
           $("#x-course").addEventListener("change", async () => {
             const cid = $("#x-course").value || "";
             await fill("x-source", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid), "id", "name", true);
@@ -489,27 +586,29 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             await fill("x-chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid), "id", "name", true);
           });
           await new Promise(r=>setTimeout(r,100));
-          await updCourse();
+          await upd();
         }
 
         function toggleExamFields() {
           const mode = $("#x-mode").value;
-          // برای konkur/mixed: course الزامی؛ برای talifi اختیاری + source/chapter ظاهر
+          // برای konkur/mixed: course الزامی؛ برای talifi اختیاری + source/chapter نمایش داده شوند
           $("#x-course-wrap").classList.toggle("hide", mode === "talifi");
           $("#x-source-wrap").classList.toggle("hide", mode !== "talifi");
           $("#x-chapter-wrap").classList.toggle("hide", mode !== "talifi");
         }
-        const xmode = document.getElementById("x-mode");
-if (xmode) xmode.addEventListener("change", toggleExamFields);
-
 
         let exam = null;
+        let lastExamId = null;
+
         function fmt(sec){ const m = Math.floor(sec/60), s = sec%60; return String(m).padStart(2,"0")+":"+String(s).padStart(2,"0"); }
         function renderExam() {
           if (!exam) return;
           $("#exam-setup").style.display = "none";
           $("#exam-box").style.display = "block";
           $("#exam-result").style.display = "none";
+          $("#x-show-review").style.display = "none";
+          $("#review-box").style.display = "none";
+          $("#review-box").innerHTML = "";
           $("#x-total").textContent = String(exam.questions.length);
           $("#x-idx").textContent = String(exam.idx+1);
           $("#x-timer").textContent = fmt(exam.tLeft);
@@ -572,19 +671,69 @@ if (xmode) xmode.addEventListener("change", toggleExamFields);
             "کل="+r.total+" — درست="+r.correct+" — غلط="+r.wrong+" — نزده="+r.blank+
             "<br>درصد بدون نمره منفی: "+r.percentNoNeg+"%"+
             "<br>درصد با نمره منفی (⅓-): "+r.percentWithNeg+"%";
+          lastExamId = exam.examId;
+          document.getElementById("x-show-review").style.display = "inline-block";
+          document.getElementById("review-box").style.display = "none";
+          document.getElementById("review-box").innerHTML = "";
           exam = null;
           $("#exam-setup").style.display = "block";
+        }
+
+        async function loadReview(){
+          if (!lastExamId) { alert("آزمونی برای مرور موجود نیست."); return; }
+          const r = await fetch("/api/student/exam/review?clientId="+encodeURIComponent(clientId)+"&examId="+encodeURIComponent(lastExamId));
+          const d = await r.json();
+          if (!d.ok) { alert(d.error || "خطا در دریافت پاسخنامه"); return; }
+          const box = document.getElementById("review-box");
+          box.style.display = "block";
+          box.innerHTML = "";
+          for (const it of d.data) {
+            const wrap = document.createElement("div");
+            wrap.className = "card";
+            wrap.style.marginTop = "6px";
+
+            const head = document.createElement("div");
+            head.innerHTML = (it.isCorrect===true ? "✅" : it.isCorrect===false ? "❌" : "⬜️") + " " + it.stem;
+            head.style.fontWeight = "600";
+            wrap.appendChild(head);
+
+            const opts = document.createElement("div");
+            for (const o of (it.options||[])) {
+              const line = document.createElement("div");
+              let text = o.label + ") " + o.text;
+              if (it.userChoice === o.label) text += "  ← پاسخ شما";
+              if (it.correctLabel === o.label) text += "  (گزینه صحیح)";
+              line.textContent = text;
+              opts.appendChild(line);
+            }
+            wrap.appendChild(opts);
+
+            if (it.expl) {
+              const ex = document.createElement("div");
+              ex.style.marginTop = "6px";
+              ex.className = "muted";
+              ex.innerHTML = "پاسخ تشریحی: " + it.expl;
+              wrap.appendChild(ex);
+            }
+            box.appendChild(wrap);
+          }
+          // اسکرول به پاسخنامه
+          document.getElementById("x-show-review").scrollIntoView({ behavior: "smooth", block: "center" });
         }
 
         // رویدادها
         $("#fetchBtn").addEventListener("click", fetchRandom);
         $("#cfetchBtn").addEventListener("click", fetchChallenge);
         $("#sload").addEventListener("click", loadStats);
-
         $("#x-start").addEventListener("click", startExam);
         $("#x-prev").addEventListener("click", prevQ);
         $("#x-next").addEventListener("click", nextQ);
         $("#x-submit").addEventListener("click", submitExam);
+        document.getElementById("x-show-review").addEventListener("click", loadReview);
+
+        // تغییر فیلدهای آزمون بر اساس mode (JS خالص)
+        const xmodeEl = document.getElementById("x-mode");
+        if (xmodeEl) xmodeEl.addEventListener("change", toggleExamFields);
 
         async function initAll(){
           await initCascadesSingle();
