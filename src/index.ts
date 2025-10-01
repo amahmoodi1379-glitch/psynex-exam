@@ -1,7 +1,7 @@
 // src/index.ts
 import { routeStudent } from "./routes/student";
 import { routeAdmin } from "./routes/admin";
-import { routeAuth } from "./routes/auth";              // ← نسخه محلی (بدون گوگل)
+import { routeAuth } from "./routes/auth";
 import { routeManagement } from "./routes/management";
 import { html } from "./lib/http";
 import { getSessionUser, requireRole } from "./lib/auth";
@@ -11,26 +11,32 @@ export default {
     const url = new URL(req.url);
     const p = url.pathname;
 
-    // 1) auth endpoints (login/signup/logout/me)
-    const ra = routeAuth(req, url, env);
-    if (ra) return ra;
+    // 1) auth endpoints
+    { const r = routeAuth(req, url, env); if (r) return r; }
 
-    // 2) قفل نوشتن تاکسونومی برای admin
-    if (p.startsWith("/api/taxonomy") && req.method !== "GET") {
-      const guard = await requireRole(req, env, "admin");
-      if (guard instanceof Response) return guard;
+    // 2) taxonomy APIs باید حتی برای GET هم به routeAdmin برسند.
+    //    نوشتن (POST/PUT/DELETE) قفل admin؛ خواندن (GET) آزاد.
+    if (p.startsWith("/api/taxonomy")) {
+      if (req.method !== "GET") {
+        const guard = await requireRole(req, env, "admin");
+        if (guard instanceof Response) return guard;
+      }
+      const r = routeAdmin(req, url, env); // ← همین باعث می‌شود GETها دوباره کار کنند
+      if (r) return r;
     }
 
-    // 3) قفل APIهای دانشجو برای کاربر لاگین
+    // 3) student APIs → نیاز به ورود
     if (p.startsWith("/api/student")) {
       const guard = await requireRole(req, env, "student");
       if (guard instanceof Response) return guard;
+      const r = routeStudent(req, url, env);
+      if (r) return r;
     }
 
     // 4) management (manager+)
     if (p === "/management" || p.startsWith("/api/users")) {
-      const rm = routeManagement(req, url, env);
-      if (rm) return rm;
+      const r = routeManagement(req, url, env);
+      if (r) return r;
     }
 
     // 5) admin (admin فقط)
@@ -41,15 +47,15 @@ export default {
       if (r) return r;
     }
 
-    // 6) student page (نیاز به لاگین)
+    // 6) student page (نیاز به ورود)
     if (p === "/student") {
       const guard = await requireRole(req, env, "student");
       if (guard instanceof Response) return guard;
-      const rs = routeStudent(req, url, env);
-      if (rs) return rs;
+      const r = routeStudent(req, url, env);
+      if (r) return r;
     }
 
-    // 7) صفحه خانه
+    // 7) صفحه خانه — لینک‌های مدیریت را فقط وقتی نقش مناسب داریم نشان بده
     const me = await getSessionUser(req, env);
     const body = `
       <h1>Psynex Exam</h1>
@@ -57,12 +63,14 @@ export default {
         ${me ? `
           <div>ورود: <b>${me.email}</b> (${me.role}, ${me.planTier}) — <a href="/logout">خروج</a></div>
         ` : `
-          <div><a href="/login"><button>ورود</button></a> یا <a href="/signup"><button>ثبت‌نام</button></a></div>
+          <div><a href="/login"><button>ورود</button></a> ${
+            (env.ALLOW_SELF_SIGNUP ?? "1")==="1" ? 'یا <a href="/signup"><button>ثبت‌نام</button></a>' : ''
+          }</div>
         `}
         <ul>
           <li><a href="/student">صفحه دانشجو</a> (نیاز به ورود)</li>
-          <li><a href="/admin">صفحه ادمین</a> (admin)</li>
-          <li><a href="/management">صفحه مدیریت کاربران</a> (manager/admin)</li>
+          ${me && (me.role === "manager" || me.role === "admin") ? `<li><a href="/management">مدیریت کاربران</a></li>` : ``}
+          ${me && me.role === "admin" ? `<li><a href="/admin">صفحه ادمین</a></li>` : ``}
         </ul>
       </div>
     `;
