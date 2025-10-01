@@ -1,104 +1,140 @@
 // src/routes/auth.ts
 import { html, json } from "../lib/http";
 import { redirect, signJWT, getSessionUser } from "../lib/auth";
-import { getUserByEmail, upsertUser } from "../lib/users";
+import { getUserByEmail, upsertUser, setUserPassword, verifyUserPassword } from "../lib/users";
+
+function isGmail(email: string) {
+  return /@gmail\.com$/i.test(email);
+}
 
 export function routeAuth(req: Request, url: URL, env?: any): Response | null {
   const p = url.pathname;
 
+  // صفحه ورود
   if (p === "/login" && req.method === "GET") {
     const r = url.searchParams.get("r") || "/student";
     const body = `
       <h1>ورود</h1>
-      <p class="muted">ورود فقط با حساب گوگل (Gmail)</p>
-      <a href="/auth/start?r=${encodeURIComponent(r)}"><button>ورود با گوگل</button></a>
+      <div class="card">
+        <div>ورود با ایمیل جیمیل و رمز عبور</div>
+        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
+          <input id="email" placeholder="you@gmail.com" style="min-width:260px">
+          <input id="pass" type="password" placeholder="رمز عبور">
+          <button id="loginBtn">ورود</button>
+        </div>
+        <div class="muted" style="margin-top:6px">
+          حساب ندارید؟ <a href="/signup?r=${encodeURIComponent(r)}">ثبت‌نام</a>
+        </div>
+      </div>
+      <script>
+        document.getElementById('loginBtn').addEventListener('click', async ()=>{
+          const email = (document.getElementById('email')).value.trim();
+          const pass  = (document.getElementById('pass')).value;
+          const r = await fetch('/api/auth/login', { method:'POST', headers:{'content-type':'application/json'},
+            body: JSON.stringify({ email, password: pass, r: '${r}' }) });
+          const d = await r.json();
+          if(!d.ok) return alert(d.error||'خطا'); location.href = d.to || '${r}';
+        });
+      </script>
     `;
     return html(body);
   }
 
-  if (p === "/auth/start" && req.method === "GET") {
+  // صفحه ثبت‌نام (می‌تونی با ALLOW_SELF_SIGNUP کنترل کنی)
+  if (p === "/signup" && req.method === "GET") {
+    const allowed = (env.ALLOW_SELF_SIGNUP ?? "1") === "1";
     const r = url.searchParams.get("r") || "/student";
-    const state = crypto.randomUUID();
-    const redirectUri = new URL("/auth/callback", url.origin).toString();
-    const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-    authUrl.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
-    authUrl.searchParams.set("redirect_uri", redirectUri);
-    authUrl.searchParams.set("response_type", "code");
-    authUrl.searchParams.set("scope", "openid email profile");
-    authUrl.searchParams.set("access_type", "online");
-    authUrl.searchParams.set("prompt", "consent");
-    authUrl.searchParams.set("state", state + "|" + encodeURIComponent(r));
-    const headers = {
-      "Set-Cookie": `oauth_state=${state}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`
-    };
-    return redirect(authUrl.toString(), headers);
+    const body = allowed ? `
+      <h1>ثبت‌نام</h1>
+      <div class="card">
+        <div>فقط ایمیل‌های Gmail مجاز هستند.</div>
+        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
+          <input id="email" placeholder="you@gmail.com" style="min-width:260px">
+          <input id="pass" type="password" placeholder="رمز عبور (حداقل 8 کاراکتر)">
+          <button id="signupBtn">ثبت‌نام</button>
+        </div>
+      </div>
+      <script>
+        document.getElementById('signupBtn').addEventListener('click', async ()=>{
+          const email = (document.getElementById('email')).value.trim();
+          const pass  = (document.getElementById('pass')).value;
+          const r = await fetch('/api/auth/signup', { method:'POST', headers:{'content-type':'application/json'},
+            body: JSON.stringify({ email, password: pass, r: '${r}' }) });
+          const d = await r.json();
+          if(!d.ok) return alert(d.error||'خطا'); location.href = d.to || '${r}';
+        });
+      </script>
+    ` : `
+      <h1>ثبت‌نام</h1>
+      <div class="card">ثبت‌نام عمومی غیرفعال است. لطفاً با مدیر تماس بگیرید.</div>
+    `;
+    return html(body);
   }
 
-  if (p === "/auth/callback" && req.method === "GET") {
+  // API: ثبت‌نام
+  if (p === "/api/auth/signup" && req.method === "POST") {
     return (async () => {
-      const code = url.searchParams.get("code") || "";
-      const state = url.searchParams.get("state") || "";
-      const co = (req.headers.get("Cookie") || "");
-      const st = co.split(";").map(s => s.trim()).find(s => s.startsWith("oauth_state="))?.split("=")[1];
-      if (!code || !state || !st || !state.startsWith(st)) {
-        return html("<h3>Invalid OAuth state</h3>", 400);
-      }
-      const after = decodeURIComponent(state.split("|")[1] || "/student");
-      const redirectUri = new URL("/auth/callback", url.origin).toString();
-      // token exchange
-      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          code,
-          client_id: env.GOOGLE_CLIENT_ID,
-          client_secret: env.GOOGLE_CLIENT_SECRET,
-          redirect_uri: redirectUri,
-          grant_type: "authorization_code"
-        })
-      });
-      if (!tokenRes.ok) {
-        const t = await tokenRes.text();
-        return html("<pre>Token error:\n" + t + "</pre>", 400);
-      }
-      const tk = await tokenRes.json() as { access_token: string };
-      // userinfo
-      const uiRes = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
-        headers: { Authorization: `Bearer ${tk.access_token}` }
-      });
-      const ui = await uiRes.json() as { email: string; email_verified: boolean; name?: string; picture?: string };
-      if (!ui?.email || !ui.email_verified) {
-        return html("<h3>ایمیل شما در گوگل وریفای نشده است.</h3>", 403);
-      }
+      if ((env.ALLOW_SELF_SIGNUP ?? "1") !== "1") return json({ ok:false, error:"signup_disabled" }, 403);
+      const body = await req.json();
+      const email = String(body?.email || "").toLowerCase();
+      const password = String(body?.password || "");
+      const to = body?.r || "/student";
+      if (!email || !password) return json({ ok:false, error:"bad_request" }, 400);
+      if (!isGmail(email)) return json({ ok:false, error:"only_gmail_allowed" }, 400);
+      if (password.length < 8) return json({ ok:false, error:"weak_password" }, 400);
 
-      // ایجاد/به‌روز کاربر
-      const prev = await getUserByEmail(env, ui.email);
-      const user = await upsertUser(env, {
-        email: ui.email,
-        name: ui.name,
-        picture: ui.picture,
-        role: prev?.role ?? "student",
-        planTier: prev?.planTier ?? "free",
-        planExpiresAt: prev?.planExpiresAt ?? null,
-        status: "active",
-      });
+      const exists = await getUserByEmail(env, email);
+      if (exists) return json({ ok:false, error:"email_exists" }, 400);
 
-      // صدور سشن
+      await upsertUser(env, { email, role:"student", planTier:"free", status:"active" });
+      await setUserPassword(env, email, password);
+
       const token = await signJWT({
-        email: user.email, name: user.name, picture: user.picture,
-        role: user.role, planTier: user.planTier, planExpiresAt: user.planExpiresAt ?? null
-      }, env.JWT_SECRET, 60 * 60 * 24 * 30);
+        email, name:"", picture:"", role:"student", planTier:"free", planExpiresAt:null
+      }, env.JWT_SECRET, 60*60*24*30);
 
-      const headers = {
-        "Set-Cookie": `sid=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 30}`,
-        "Location": after
-      };
-      return new Response("", { status: 302, headers });
+      return new Response(JSON.stringify({ ok:true, to }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "Set-Cookie": `sid=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${60*60*24*30}`
+        }
+      });
     })();
   }
 
+  // API: ورود
+  if (p === "/api/auth/login" && req.method === "POST") {
+    return (async () => {
+      const body = await req.json();
+      const email = String(body?.email || "").toLowerCase();
+      const password = String(body?.password || "");
+      const to = body?.r || "/student";
+      if (!email || !password) return json({ ok:false, error:"bad_request" }, 400);
+      if (!isGmail(email)) return json({ ok:false, error:"only_gmail_allowed" }, 400);
+
+      const u = await verifyUserPassword(env, email, password);
+      if (!u) return json({ ok:false, error:"invalid_credentials" }, 401);
+      if (u.status !== "active") return json({ ok:false, error:"disabled_user" }, 403);
+
+      const token = await signJWT({
+        email: u.email, name: u.name, picture: u.picture, role: u.role,
+        planTier: u.planTier, planExpiresAt: u.planExpiresAt ?? null
+      }, env.JWT_SECRET, 60*60*24*30);
+
+      return new Response(JSON.stringify({ ok:true, to }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "Set-Cookie": `sid=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${60*60*24*30}`
+        }
+      });
+    })();
+  }
+
+  // خروج
   if (p === "/logout") {
-    return new Response("Logged out", {
+    return new Response("", {
       status: 302,
       headers: {
         "Set-Cookie": "sid=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0",
@@ -107,7 +143,7 @@ export function routeAuth(req: Request, url: URL, env?: any): Response | null {
     });
   }
 
-  // وضعیت فعلی
+  // اطلاعات کاربر فعلی
   if (p === "/api/me") {
     return (async () => {
       const me = await getSessionUser(req, env);
