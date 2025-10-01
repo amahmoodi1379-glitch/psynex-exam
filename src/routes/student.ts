@@ -3,7 +3,7 @@ import { html, json, page } from "../lib/http";
 import {
   queryRandomQuestion, getQuestion, recordAnswer, upsertRating,
   chooseChallengeQuestion, listAnswersByClient, aggregateStatsFromLogs,
-  createExamDraft, gradeExam, getExamReview
+  createExamDraft, gradeExam, getExamReview, listQuestions
 } from "../lib/dataStore";
 
 export function routeStudent(req: Request, url: URL, env?: any): Response | null {
@@ -12,7 +12,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   // --- API: سؤال تصادفی ---
   if (p === "/api/student/random" && req.method === "GET") {
     return (async () => {
-      const type = ((url.searchParams.get("type") || "konkur") as "konkur"|"talifi");
+      const type = ((url.searchParams.get("type") || "konkur") as "konkur"|"talifi"|"qa");
       const majorId = url.searchParams.get("majorId");
       if (!majorId) return json({ ok: false, error: "majorId required" }, 400);
 
@@ -30,7 +30,13 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       const q = await queryRandomQuestion(env, type, filters);
       if (!q) return json({ ok: false, error: "no_question" }, 404);
 
-      const safe = { id: q.id, type: q.type, stem: q.stem, options: (q.options || []).map(o => ({ label: o.label, text: o.text })) };
+      const safe = {
+        id: q.id,
+        type: q.type,
+        stem: q.stem,
+        options: (q.options || []).map(o => ({ label: o.label, text: o.text })),
+        expl: (!q.options || q.options.length === 0) ? (q.expl || null) : null
+      };
       return json({ ok: true, data: safe });
     })();
   }
@@ -41,18 +47,24 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       try {
         const body = await req.json();
         const id = body?.id as string;
-        const type = body?.type as "konkur"|"talifi";
-        const choice = body?.choice as "A"|"B"|"C"|"D";
+        const type = body?.type as "konkur"|"talifi"|"qa";
+        const choice = body?.choice as "A"|"B"|"C"|"D"|undefined|null;
         const clientId = body?.clientId as string;
         const quality = body?.quality ? Number(body.quality) : undefined;
         const difficulty = body?.difficulty ? Number(body.difficulty) : undefined;
         const filters = body?.filters || undefined;
 
-        if (!id || !type || !choice || !clientId) return json({ ok: false, error: "bad_request" }, 400);
+        if (!id || !type || !clientId) return json({ ok: false, error: "bad_request" }, 400);
+        if (type !== "qa" && !choice) return json({ ok: false, error: "bad_request" }, 400);
         if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
 
         const q = await getQuestion(env, type, id);
         if (!q) return json({ ok: false, error: "not_found" }, 404);
+
+        if (type === "qa") {
+          await upsertRating(env, id, quality, difficulty);
+          return json({ ok: true, correct: null, correctLabel: null, expl: q.expl || null });
+        }
 
         const correct = q.correctLabel === choice;
         await recordAnswer(env, { clientId, qid: id, type, choice, correct, at: Date.now(), filters });
@@ -86,7 +98,48 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       const q = await chooseChallengeQuestion(env, clientId, filters, type);
       if (!q) return json({ ok: false, error: "no_challenge" }, 404);
 
-      const safe = { id: q.id, type: q.type, stem: q.stem, options: (q.options || []).map(o => ({ label: o.label, text: o.text })) };
+      const safe = {
+        id: q.id,
+        type: q.type,
+        stem: q.stem,
+        options: (q.options || []).map(o => ({ label: o.label, text: o.text })),
+        expl: (!q.options || q.options.length === 0) ? (q.expl || null) : null
+      };
+      return json({ ok: true, data: safe });
+    })();
+  }
+
+  // --- API: لیست/جستجوی پرسش‌های تشریحی ---
+  if (p === "/api/student/qa/list" && req.method === "GET") {
+    return (async () => {
+      if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+      const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") || 20)));
+      const majorId = url.searchParams.get("majorId");
+      const courseId = url.searchParams.get("courseId");
+      const query = (url.searchParams.get("query") || "").trim().toLowerCase();
+      if (!majorId) return json({ ok: false, error: "majorId required" }, 400);
+
+      const raw = await listQuestions(env, "qa", limit * 3);
+      const filtered = raw.filter(it => {
+        if (String(it.majorId) !== String(majorId)) return false;
+        if (courseId && String(it.courseId || "") !== String(courseId)) return false;
+        if (query) {
+          const hay = ((it.stem || "") + " " + (it.expl || "")).toLowerCase();
+          if (!hay.includes(query)) return false;
+        }
+        return true;
+      }).slice(0, limit);
+
+      const safe = filtered.map(it => ({
+        id: it.id,
+        type: it.type,
+        stem: it.stem,
+        expl: it.expl || null,
+        majorId: it.majorId,
+        courseId: it.courseId,
+        createdAt: it.createdAt
+      }));
+
       return json({ ok: true, data: safe });
     })();
   }
@@ -192,6 +245,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       <div class="tabbar">
         <button data-tab="tab-single" class="active">تک‌سؤال‌ها</button>
         <button data-tab="tab-challenges">چالش‌ها</button>
+        <button data-tab="tab-qa">پرسش‌های تشریحی</button>
         <button data-tab="tab-stats">آمار</button>
         <button data-tab="tab-exam">آزمون</button>
       </div>
@@ -204,6 +258,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             <select id="type">
               <option value="konkur">کنکور</option>
               <option value="talifi">تالیفی</option>
+              <option value="qa">تشریحی</option>
             </select>
           </div>
           <div><label>رشته (الزامی)</label> <select id="major" required></select></div>
@@ -264,6 +319,20 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           <div id="cresult" style="margin-top:10px" class="muted"></div>
           <button id="cnextBtn" style="margin-top:8px">چالشی بعدی</button>
         </div>
+      </div>
+
+      <!-- پرسش‌های تشریحی -->
+      <div class="card tabsec" id="tab-qa">
+        <b>پرسش‌های تشریحی</b>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:end">
+          <div><label>رشته (الزامی)</label> <select id="qmajor" required></select></div>
+          <div><label>درس</label> <select id="qcourse"></select></div>
+          <div><label>جستجو</label> <input id="qquery" type="text" placeholder="کلیدواژه" style="width:180px"></div>
+          <button id="qa-search">جستجو</button>
+          <button id="qa-random">نمایش تصادفی</button>
+        </div>
+        <div id="qa-empty" class="muted" style="margin-top:8px">برای شروع، رشته را انتخاب کن و جستجو را بزن یا «نمایش تصادفی» را امتحان کن.</div>
+        <div id="qa-list" style="margin-top:8px; display:flex; flex-direction:column; gap:8px"></div>
       </div>
 
       <!-- آمار -->
@@ -446,17 +515,33 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           $("#qbox").style.display="block";
           $("#stem").textContent = q.stem;
           const box = $("#opts"); box.innerHTML = "";
-          for (const o of (q.options || [])) {
+          const opts = q.options || [];
+          if (opts.length) {
+            for (const o of opts) {
+              const btn = document.createElement("button");
+              btn.textContent = o.label + ") " + o.text;
+              btn.style.display = "block";
+              btn.style.margin = "6px 0";
+              btn.onclick = () => answer(q, o.label, "single");
+              box.appendChild(btn);
+            }
+            $("#result").textContent = "";
+          } else {
+            const note = document.createElement("div");
+            note.className = "muted";
+            note.textContent = "این پرسش گزینه‌ای ندارد. برای مشاهده پاسخ تشریحی دکمه زیر را بزن.";
+            box.appendChild(note);
             const btn = document.createElement("button");
-            btn.textContent = o.label + ") " + o.text;
+            btn.textContent = "مشاهده پاسخ تشریحی";
             btn.style.display = "block";
             btn.style.margin = "6px 0";
-            btn.onclick = () => answer(q, o.label, "single");
+            btn.onclick = () => answer(q, null, "single");
             box.appendChild(btn);
+            const res = $("#result");
+            res.textContent = "";
           }
-          $("#result").textContent = "";
           $("#nextBtn").onclick = () => fetchRandom();
-          $("#qbox").dataset.id = q.id; $("#qbox").dataset.type = q.type;
+          $("#qbox").dataset.id = q.id; $("#qbox").dataset.type = q.type; $("#qbox").dataset.expl = q.expl || "";
         }
 
         // ---------- چالش‌ها ----------
@@ -517,18 +602,177 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           $("#cbox").dataset.id = q.id; $("#cbox").dataset.type = q.type;
         }
 
+        // ---------- پرسش‌های تشریحی ----------
+        async function initCascadesQA() {
+          await fill("qmajor", "/api/taxonomy/majors", "id", "name", false);
+          const upd = async () => {
+            const mid = $("#qmajor").value || "";
+            await fill("qcourse", "/api/taxonomy/courses?majorId="+encodeURIComponent(mid));
+          };
+          $("#qmajor").addEventListener("change", upd);
+          await new Promise(r=>setTimeout(r,100));
+          await upd();
+        }
+
+        function makeRatingSelect() {
+          const sel = document.createElement("select");
+          sel.innerHTML = "<option value=''>--</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>";
+          return sel;
+        }
+
+        function renderQaList(items) {
+          const list = $("#qa-list");
+          const empty = $("#qa-empty");
+          list.innerHTML = "";
+          if (!items || !items.length) {
+            empty.style.display = "block";
+            empty.textContent = "موردی یافت نشد.";
+            return;
+          }
+          empty.style.display = "none";
+          for (const it of items) {
+            const wrap = document.createElement("div");
+            wrap.className = "card";
+            wrap.dataset.id = it.id;
+            wrap.dataset.type = it.type || "qa";
+
+            const stem = document.createElement("div");
+            stem.style.fontWeight = "600";
+            stem.textContent = it.stem;
+            wrap.appendChild(stem);
+
+            const controls = document.createElement("div");
+            controls.style.display = "flex";
+            controls.style.flexWrap = "wrap";
+            controls.style.alignItems = "center";
+            controls.style.gap = "6px";
+            controls.style.marginTop = "6px";
+
+            const qLabel = document.createElement("span");
+            qLabel.textContent = "کیفیت:";
+            const qSel = makeRatingSelect();
+            const dLabel = document.createElement("span");
+            dLabel.textContent = "سختی:";
+            const dSel = makeRatingSelect();
+
+            const btn = document.createElement("button");
+            btn.textContent = "مشاهده پاسخ";
+
+            const expl = document.createElement("div");
+            expl.className = "muted";
+            expl.style.marginTop = "6px";
+            expl.style.display = "none";
+            expl.innerHTML = it.expl || "";
+
+            btn.addEventListener("click", () => revealQa(it, qSel, dSel, expl, btn));
+
+            controls.appendChild(qLabel);
+            controls.appendChild(qSel);
+            controls.appendChild(dLabel);
+            controls.appendChild(dSel);
+            controls.appendChild(btn);
+
+            wrap.appendChild(controls);
+            wrap.appendChild(expl);
+            list.appendChild(wrap);
+          }
+        }
+
+        async function revealQa(item, qSel, dSel, explEl, btn) {
+          if (explEl.dataset.revealed === "1") {
+            explEl.style.display = "block";
+            return;
+          }
+          if (btn.dataset.loading === "1") return;
+          btn.dataset.loading = "1";
+          const original = btn.textContent;
+          btn.textContent = "در حال دریافت...";
+          let explanation = item.expl || null;
+          let success = false;
+          try {
+            const payload = { id: item.id, type: item.type || "qa", clientId };
+            const qv = Number(qSel.value || "");
+            const dv = Number(dSel.value || "");
+            if (qv) payload.quality = qv;
+            if (dv) payload.difficulty = dv;
+            const res = await fetch("/api/student/answer", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error || "error");
+            if (data.expl != null) explanation = data.expl;
+            success = true;
+          } catch (e) {
+            if (!explanation) {
+              btn.textContent = original;
+              delete btn.dataset.loading;
+              alert("خطا در دریافت پاسخ تشریحی");
+              return;
+            }
+          }
+          explEl.innerHTML = explanation || "پاسخی برای این پرسش ثبت نشده است.";
+          explEl.style.display = "block";
+          explEl.dataset.revealed = "1";
+          delete btn.dataset.loading;
+          btn.disabled = true;
+          btn.textContent = success ? "پاسخ نمایش داده شد" : "پاسخ بدون ثبت";
+        }
+
+        async function loadQaList() {
+          const majorId = $("#qmajor").value;
+          if (!majorId) { alert("رشته را انتخاب کن."); return; }
+          const courseId = $("#qcourse").value;
+          const query = $("#qquery").value.trim();
+          const params = new URLSearchParams({ majorId });
+          if (courseId) params.set("courseId", courseId);
+          if (query) params.set("query", query);
+          $("#qa-empty").style.display = "block";
+          $("#qa-empty").textContent = "در حال جستجو...";
+          const res = await fetch("/api/student/qa/list?"+params.toString());
+          const d = await res.json();
+          if (!d.ok) {
+            $("#qa-list").innerHTML = "";
+            $("#qa-empty").style.display = "block";
+            $("#qa-empty").textContent = d.error || "خطا در دریافت داده";
+            return;
+          }
+          renderQaList(d.data || []);
+        }
+
+        async function fetchRandomQa() {
+          const majorId = $("#qmajor").value;
+          if (!majorId) { alert("رشته را انتخاب کن."); return; }
+          const courseId = $("#qcourse").value;
+          const params = new URLSearchParams({ type: "qa", majorId });
+          if (courseId) params.set("courseId", courseId);
+          const res = await fetch("/api/student/random?"+params.toString());
+          const d = await res.json();
+          if (!d.ok) { alert("پرسش تشریحی پیدا نشد."); return; }
+          renderQaList([d.data]);
+        }
+
         async function answer(q, choice, mode) {
           const quality = Number((mode==="single" ? $("#quality").value : $("#cquality").value) || "") || undefined;
           const difficulty = Number((mode==="single" ? $("#difficulty").value : $("#cdifficulty").value) || "") || undefined;
           const filters = mode==="single" ? currentFiltersSingle() : currentFiltersChallenge();
+          const payload = { id: q.id, type: q.type, clientId, quality, difficulty, filters };
+          if (choice) { payload.choice = choice; }
           const res = await fetch("/api/student/answer", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ id: q.id, type: q.type, choice, clientId, quality, difficulty, filters })
+            body: JSON.stringify(payload)
           });
           const d = await res.json();
           const target = (mode==="single") ? "#result" : "#cresult";
           if (!d.ok) { document.querySelector(target).textContent = "خطا."; return; }
+          if (q.type === "qa" || !choice) {
+            const html = d.expl ? "<div style='margin-top:6px'>"+d.expl+"</div>" : "پاسخی برای این پرسش ثبت نشده است.";
+            document.querySelector(target).innerHTML = html;
+            if (mode==="single") { seenAdd(q.id); }
+            return;
+          }
           const html = (d.correct? "✅ درست": "❌ غلط") + (d.correctLabel? " — گزینه صحیح: " + d.correctLabel : "") + (d.expl? "<div style='margin-top:6px'>"+d.expl+"</div>": "");
           document.querySelector(target).innerHTML = html;
           if (mode==="single") { seenAdd(q.id); }
@@ -724,6 +968,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         // رویدادها
         $("#fetchBtn").addEventListener("click", fetchRandom);
         $("#cfetchBtn").addEventListener("click", fetchChallenge);
+        $("#qa-search").addEventListener("click", loadQaList);
+        $("#qa-random").addEventListener("click", fetchRandomQa);
         $("#sload").addEventListener("click", loadStats);
         $("#x-start").addEventListener("click", startExam);
         $("#x-prev").addEventListener("click", prevQ);
@@ -738,6 +984,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         async function initAll(){
           await initCascadesSingle();
           await initCascadesChallenge();
+          await initCascadesQA();
           await initCascadesExam();
           toggleExamFields();
         }
