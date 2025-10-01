@@ -1,127 +1,457 @@
-import { json } from "../lib/http";
-import { loadTaxonomy, saveTaxonomy } from "../lib/taxonomyStore";
+// src/routes/taxonomy.ts
+import { html, json, page } from "../lib/http";
+import { requireRole } from "../lib/auth";
 
-type Entity =
-  | "majors" | "degrees" | "ministries" | "exam-years"
-  | "courses" | "sources" | "chapters";
+type Item = { id: string; name: string };
+type Course = Item & { majorId: string };
+type Source = Item & { courseId: string };
+type Chapter = Item & { sourceId: string };
 
-const map: Record<Entity, keyof Awaited<ReturnType<typeof loadTaxonomy>>> = {
-  majors: "majors",
-  degrees: "degrees",
-  ministries: "ministries",
-  "exam-years": "examYears",
-  courses: "courses",
-  sources: "sources",
-  chapters: "chapters"
+const K = {
+  major: (id: string) => `taxo:majors:${id}`,
+  degree: (id: string) => `taxo:degrees:${id}`,
+  ministry: (id: string) => `taxo:ministries:${id}`,
+  examYear: (id: string) => `taxo:examYears:${id}`,
+  course: (id: string) => `taxo:courses:${id}`,
+  source: (id: string) => `taxo:sources:${id}`,
+  chapter: (id: string) => `taxo:chapters:${id}`,
 };
 
-export async function routeTaxonomy(req: Request, url: URL, env: any): Promise<Response | null> {
+function nid() { return String(Date.now()) + Math.floor(Math.random()*100000).toString().padStart(5, "0"); }
+async function listAll<T>(env:any, prefix:string): Promise<T[]> {
+  const out:T[] = [];
+  let cursor: string | undefined;
+  while (true) {
+    const res = await env.TAXO.list({ prefix, limit: 1000, cursor });
+    for (const k of res.keys) {
+      const raw = await env.TAXO.get(k.name);
+      if (raw) out.push(JSON.parse(raw));
+    }
+    if (res.list_complete) break;
+    cursor = res.cursor;
+  }
+  return out;
+}
+
+export function routeTaxonomy(req: Request, url: URL, env?: any): Response | null {
   const p = url.pathname;
 
-  const t = await loadTaxonomy(env);
+  // ---------- GET های عمومی برای دراپ‌داون‌ها ----------
+  if (p === "/api/taxonomy/majors" && req.method === "GET") {
+    return (async () => {
+      const items: Item[] = await listAll(env, "taxo:majors:");
+      items.sort((a,b)=> a.name.localeCompare(b.name, "fa"));
+      return json(items);
+    })();
+  }
+  if (p === "/api/taxonomy/degrees" && req.method === "GET") {
+    return (async () => {
+      const items: Item[] = await listAll(env, "taxo:degrees:");
+      items.sort((a,b)=> a.name.localeCompare(b.name, "fa"));
+      return json(items);
+    })();
+  }
+  if (p === "/api/taxonomy/ministries" && req.method === "GET") {
+    return (async () => {
+      const items: Item[] = await listAll(env, "taxo:ministries:");
+      items.sort((a,b)=> a.name.localeCompare(b.name, "fa"));
+      return json(items);
+    })();
+  }
+  if (p === "/api/taxonomy/exam-years" && req.method === "GET") {
+    return (async () => {
+      const items: Item[] = await listAll(env, "taxo:examYears:");
+      items.sort((a,b)=> a.name.localeCompare(b.name, "fa"));
+      return json(items);
+    })();
+  }
+  if (p === "/api/taxonomy/courses" && req.method === "GET") {
+    return (async () => {
+      const majorId = url.searchParams.get("majorId") || "";
+      const items: Course[] = await listAll(env, "taxo:courses:");
+      const filtered = majorId ? items.filter(x=>x.majorId===majorId) : items;
+      filtered.sort((a,b)=> a.name.localeCompare(b.name, "fa"));
+      return json(filtered);
+    })();
+  }
+  if (p === "/api/taxonomy/sources" && req.method === "GET") {
+    return (async () => {
+      const courseId = url.searchParams.get("courseId") || "";
+      const items: Source[] = await listAll(env, "taxo:sources:");
+      const filtered = courseId ? items.filter(x=>x.courseId===courseId) : items;
+      filtered.sort((a,b)=> a.name.localeCompare(b.name, "fa"));
+      return json(filtered);
+    })();
+  }
+  if (p === "/api/taxonomy/chapters" && req.method === "GET") {
+    return (async () => {
+      const sourceId = url.searchParams.get("sourceId") || "";
+      const items: Chapter[] = await listAll(env, "taxo:chapters:");
+      const filtered = sourceId ? items.filter(x=>x.sourceId===sourceId) : items;
+      filtered.sort((a,b)=> a.name.localeCompare(b.name, "fa"));
+      return json(filtered);
+    })();
+  }
 
-  // عمومی
-  if (p === "/api/taxonomy/majors") return json(t.majors);
-  if (p === "/api/taxonomy/degrees") return json(t.degrees);
-  if (p === "/api/taxonomy/ministries") return json(t.ministries);
-  if (p === "/api/taxonomy/exam-years") return json(t.examYears);
+  // ---------- نوشتن (فقط ادمین) ----------
+  // helpers
+  async function ensureAdmin(): Promise<Response | null> {
+    const r = await requireRole(req, env, "admin");
+    return (r instanceof Response) ? r : null;
+  }
+  async function up(env:any, key:string, obj:any) { await env.TAXO.put(key, JSON.stringify(obj)); }
+  async function del(env:any, key:string) { await env.TAXO.delete(key); }
 
-  if (p === "/api/taxonomy/courses") {
-    const majorId = url.searchParams.get("majorId");
-    return json(t.courses.filter(c => !majorId || String(c.parentId) === String(majorId)));
+  // majors
+  if (p === "/api/taxonomy/majors" && req.method === "POST") {
+    return (async () => {
+      const g = await ensureAdmin(); if (g) return g;
+      const body = await req.json(); const name = String(body?.name || "").trim(); const id = String(body?.id || "") || nid();
+      if (!name) return json({ ok:false, error:"name_required" }, 400);
+      const obj: Item = { id, name }; await up(env, K.major(id), obj);
+      return json({ ok:true, item: obj });
+    })();
   }
-  if (p === "/api/taxonomy/sources") {
-    const courseId = url.searchParams.get("courseId");
-    return json(t.sources.filter(s => !courseId || String(s.parentId) === String(courseId)));
-  }
-  if (p === "/api/taxonomy/chapters") {
-    const sourceId = url.searchParams.get("sourceId");
-    return json(t.chapters.filter(ch => !sourceId || String(ch.parentId) === String(sourceId)));
+  if (p === "/api/taxonomy/majors/delete" && req.method === "POST") {
+    return (async () => {
+      const g = await ensureAdmin(); if (g) return g;
+      const body = await req.json(); const id = String(body?.id || "");
+      if (!id) return json({ ok:false, error:"id_required" }, 400);
+      // جلوگیری از حذف در صورت وجود course
+      const courses: Course[] = await listAll(env, "taxo:courses:");
+      if (courses.some(c=>c.majorId===id)) return json({ ok:false, error:"has_children" }, 400);
+      await del(env, K.major(id));
+      return json({ ok:true });
+    })();
   }
 
-  // مدیریت - نیاز به توکن
-  if (p === "/api/management/taxonomy" && req.method === "GET") {
-    if (!isAdmin(url, req, env)) return json({ ok: false, error: "unauthorized" }, 401);
-    return json({ ok: true, data: t });
+  // degrees
+  if (p === "/api/taxonomy/degrees" && req.method === "POST") {
+    return (async () => {
+      const g = await ensureAdmin(); if (g) return g;
+      const body = await req.json(); const name = String(body?.name || "").trim(); const id = String(body?.id || "") || nid();
+      if (!name) return json({ ok:false, error:"name_required" }, 400);
+      const obj: Item = { id, name }; await up(env, K.degree(id), obj);
+      return json({ ok:true, item: obj });
+    })();
   }
-  if (p === "/api/management/taxonomy" && req.method === "PUT") {
-    if (!isAdmin(url, req, env)) return json({ ok: false, error: "unauthorized" }, 401);
-    try {
+  if (p === "/api/taxonomy/degrees/delete" && req.method === "POST") {
+    return (async () => {
+      const g = await ensureAdmin(); if (g) return g;
+      const body = await req.json(); const id = String(body?.id || "");
+      if (!id) return json({ ok:false, error:"id_required" }, 400);
+      await del(env, K.degree(id)); return json({ ok:true });
+    })();
+  }
+
+  // ministries
+  if (p === "/api/taxonomy/ministries" && req.method === "POST") {
+    return (async () => {
+      const g = await ensureAdmin(); if (g) return g;
+      const body = await req.json(); const name = String(body?.name || "").trim(); const id = String(body?.id || "") || nid();
+      if (!name) return json({ ok:false, error:"name_required" }, 400);
+      const obj: Item = { id, name }; await up(env, K.ministry(id), obj);
+      return json({ ok:true, item: obj });
+    })();
+  }
+  if (p === "/api/taxonomy/ministries/delete" && req.method === "POST") {
+    return (async () => {
+      const g = await ensureAdmin(); if (g) return g;
+      const body = await req.json(); const id = String(body?.id || "");
+      if (!id) return json({ ok:false, error:"id_required" }, 400);
+      await del(env, K.ministry(id)); return json({ ok:true });
+    })();
+  }
+
+  // examYears
+  if (p === "/api/taxonomy/exam-years" && req.method === "POST") {
+    return (async () => {
+      const g = await ensureAdmin(); if (g) return g;
+      const body = await req.json(); const name = String(body?.name || "").trim(); const id = String(body?.id || "") || nid();
+      if (!name) return json({ ok:false, error:"name_required" }, 400);
+      const obj: Item = { id, name }; await up(env, K.examYear(id), obj);
+      return json({ ok:true, item: obj });
+    })();
+  }
+  if (p === "/api/taxonomy/exam-years/delete" && req.method === "POST") {
+    return (async () => {
+      const g = await ensureAdmin(); if (g) return g;
+      const body = await req.json(); const id = String(body?.id || "");
+      if (!id) return json({ ok:false, error:"id_required" }, 400);
+      await del(env, K.examYear(id)); return json({ ok:true });
+    })();
+  }
+
+  // courses
+  if (p === "/api/taxonomy/courses" && req.method === "POST") {
+    return (async () => {
+      const g = await ensureAdmin(); if (g) return g;
       const body = await req.json();
-      await saveTaxonomy(env, body);
-      return json({ ok: true });
-    } catch (e: any) {
-      return json({ ok: false, error: String(e?.message || e) }, 400);
-    }
+      const name = String(body?.name || "").trim(); const majorId = String(body?.majorId || ""); const id = String(body?.id || "") || nid();
+      if (!name || !majorId) return json({ ok:false, error:"name_major_required" }, 400);
+      const obj: Course = { id, name, majorId }; await up(env, K.course(id), obj);
+      return json({ ok:true, item: obj });
+    })();
+  }
+  if (p === "/api/taxonomy/courses/delete" && req.method === "POST") {
+    return (async () => {
+      const g = await ensureAdmin(); if (g) return g;
+      const body = await req.json(); const id = String(body?.id || "");
+      if (!id) return json({ ok:false, error:"id_required" }, 400);
+      // جلوگیری از حذف در صورت وجود source
+      const sources: Source[] = await listAll(env, "taxo:sources:");
+      if (sources.some(s=>s.courseId===id)) return json({ ok:false, error:"has_children" }, 400);
+      await del(env, K.course(id)); return json({ ok:true });
+    })();
   }
 
-  // افزودن یا ویرایش یک آیتم
-  if (p === "/api/management/taxonomy/upsert" && req.method === "POST") {
-    if (!isAdmin(url, req, env)) return json({ ok: false, error: "unauthorized" }, 401);
-    const entityParam = url.searchParams.get("entity") as Entity | null;
-    if (!entityParam || !map[entityParam]) return json({ ok: false, error: "bad entity" }, 400);
-
-    const body = await req.json().catch(() => null) as any;
-    if (!body || !body.name) return json({ ok: false, error: "name required" }, 400);
-
-    const key = map[entityParam];
-    // @ts-ignore
-    const list = t[key] as Array<any>;
-    const id = body.id ? String(body.id) : String(Date.now());
-
-    const idx = list.findIndex(it => String(it.id) === id);
-    const item: any = { id, name: String(body.name) };
-    if (entityParam === "courses") item.parentId = body.parentId;
-    if (entityParam === "sources") item.parentId = body.parentId;
-    if (entityParam === "chapters") item.parentId = body.parentId;
-
-    if (idx >= 0) list[idx] = { ...list[idx], ...item };
-    else list.push(item);
-
-    await saveTaxonomy(env, t);
-    return json({ ok: true, item });
+  // sources
+  if (p === "/api/taxonomy/sources" && req.method === "POST") {
+    return (async () => {
+      const g = await ensureAdmin(); if (g) return g;
+      const body = await req.json();
+      const name = String(body?.name || "").trim(); const courseId = String(body?.courseId || ""); const id = String(body?.id || "") || nid();
+      if (!name || !courseId) return json({ ok:false, error:"name_course_required" }, 400);
+      const obj: Source = { id, name, courseId }; await up(env, K.source(id), obj);
+      return json({ ok:true, item: obj });
+    })();
+  }
+  if (p === "/api/taxonomy/sources/delete" && req.method === "POST") {
+    return (async () => {
+      const g = await ensureAdmin(); if (g) return g;
+      const body = await req.json(); const id = String(body?.id || "");
+      if (!id) return json({ ok:false, error:"id_required" }, 400);
+      const chapters: Chapter[] = await listAll(env, "taxo:chapters:");
+      if (chapters.some(c=>c.sourceId===id)) return json({ ok:false, error:"has_children" }, 400);
+      await del(env, K.source(id)); return json({ ok:true });
+    })();
   }
 
-  // حذف یک آیتم با حذف آبشاری
-  if (p === "/api/management/taxonomy/delete" && req.method === "DELETE") {
-    if (!isAdmin(url, req, env)) return json({ ok: false, error: "unauthorized" }, 401);
-    const entityParam = url.searchParams.get("entity") as Entity | null;
-    const id = url.searchParams.get("id");
-    if (!entityParam || !map[entityParam] || !id) return json({ ok: false, error: "bad params" }, 400);
+  // chapters
+  if (p === "/api/taxonomy/chapters" && req.method === "POST") {
+    return (async () => {
+      const g = await ensureAdmin(); if (g) return g;
+      const body = await req.json();
+      const name = String(body?.name || "").trim(); const sourceId = String(body?.sourceId || ""); const id = String(body?.id || "") || nid();
+      if (!name || !sourceId) return json({ ok:false, error:"name_source_required" }, 400);
+      const obj: Chapter = { id, name, sourceId }; await up(env, K.chapter(id), obj);
+      return json({ ok:true, item: obj });
+    })();
+  }
+  if (p === "/api/taxonomy/chapters/delete" && req.method === "POST") {
+    return (async () => {
+      const g = await ensureAdmin(); if (g) return g;
+      const body = await req.json(); const id = String(body?.id || "");
+      if (!id) return json({ ok:false, error:"id_required" }, 400);
+      await del(env, K.chapter(id)); return json({ ok:true });
+    })();
+  }
 
-    cascadeDelete(t, entityParam, id);
-    await saveTaxonomy(env, t);
-    return json({ ok: true });
+  // ---------- صفحهٔ مدیریت تاکسونومی (ادمین) ----------
+  if (p === "/admin/taxonomy" && req.method === "GET") {
+    return (async () => {
+      const g = await requireRole(req, env, "admin"); if (g instanceof Response) return g;
+      const body = `
+        <style>
+          .row{display:flex; gap:8px; flex-wrap:wrap; align-items:end}
+          input,select{padding:6px}
+          table{width:100%; border-collapse: collapse; margin-top:8px}
+          th,td{border:1px solid #eee; padding:6px}
+          th{background:#fafafa}
+        </style>
+        <h1>مدیریت تاکسونومی</h1>
+
+        <div class="card">
+          <b>رشته‌ها</b>
+          <div class="row">
+            <input id="m-name" placeholder="نام رشته">
+            <button id="m-add">افزودن</button>
+            <select id="m-list" style="min-width:260px"></select>
+            <button id="m-del">حذف</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <b>درس‌ها</b>
+          <div class="row">
+            <select id="c-major"></select>
+            <input id="c-name" placeholder="نام درس">
+            <button id="c-add">افزودن</button>
+            <select id="c-list" style="min-width:260px"></select>
+            <button id="c-del">حذف</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <b>منابع</b>
+          <div class="row">
+            <select id="s-course"></select>
+            <input id="s-name" placeholder="نام منبع">
+            <button id="s-add">افزودن</button>
+            <select id="s-list" style="min-width:260px"></select>
+            <button id="s-del">حذف</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <b>فصل‌ها</b>
+          <div class="row">
+            <select id="ch-source"></select>
+            <input id="ch-name" placeholder="نام فصل/مبحث">
+            <button id="ch-add">افزودن</button>
+            <select id="ch-list" style="min-width:260px"></select>
+            <button id="ch-del">حذف</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <b>سایرها</b>
+          <div class="row">
+            <input id="d-name" placeholder="مقطع">
+            <button id="d-add">افزودن مقطع</button>
+            <select id="d-list" style="min-width:200px"></select>
+            <button id="d-del">حذف</button>
+          </div>
+          <div class="row" style="margin-top:6px">
+            <input id="mi-name" placeholder="وزارتخانه (بهداشت/علوم)">
+            <button id="mi-add">افزودن وزارت</button>
+            <select id="mi-list" style="min-width:200px"></select>
+            <button id="mi-del">حذف</button>
+          </div>
+          <div class="row" style="margin-top:6px">
+            <input id="y-name" placeholder="سال کنکور (مثلاً 1403)">
+            <button id="y-add">افزودن سال</button>
+            <select id="y-list" style="min-width:200px"></select>
+            <button id="y-del">حذف</button>
+          </div>
+        </div>
+
+        <script>
+          async function fill(sel, url, val="id", lab="name") {
+            const el = document.getElementById(sel); el.innerHTML = "";
+            const r = await fetch(url); const arr = await r.json();
+            for (const it of arr) {
+              const o = document.createElement("option"); o.value = it[val]; o.textContent = it[lab]; el.appendChild(o);
+            }
+            return arr;
+          }
+          async function loadMajors(){ return fill("m-list", "/api/taxonomy/majors"); }
+          async function loadDeg(){ return fill("d-list", "/api/taxonomy/degrees"); }
+          async function loadMin(){ return fill("mi-list", "/api/taxonomy/ministries"); }
+          async function loadYears(){ return fill("y-list", "/api/taxonomy/exam-years"); }
+
+          async function loadCourses(){
+            const majors = await fill("c-major", "/api/taxonomy/majors");
+            const mid = document.getElementById("c-major").value || (majors[0]?.id||"");
+            return fill("c-list", "/api/taxonomy/courses?majorId="+encodeURIComponent(mid));
+          }
+          async function loadSources(){
+            const courses = await fill("s-course", "/api/taxonomy/courses");
+            const cid = document.getElementById("s-course").value || (courses[0]?.id||"");
+            return fill("s-list", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
+          }
+          async function loadChapters(){
+            const sources = await fill("ch-source", "/api/taxonomy/sources");
+            const sid = document.getElementById("ch-source").value || (sources[0]?.id||"");
+            return fill("ch-list", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+          }
+
+          // add/delete handlers
+          document.getElementById("m-add").onclick = async ()=>{
+            const name = document.getElementById("m-name").value.trim(); if(!name) return alert("نام را وارد کن");
+            const r = await fetch("/api/taxonomy/majors", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({name})});
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); document.getElementById("m-name").value=""; await loadMajors(); await loadCourses();
+          };
+          document.getElementById("m-del").onclick = async ()=>{
+            const id = document.getElementById("m-list").value; if(!id) return;
+            const r = await fetch("/api/taxonomy/majors/delete", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({id})});
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); await loadMajors(); await loadCourses();
+          };
+
+          document.getElementById("c-major").addEventListener("change", loadCourses);
+          document.getElementById("c-add").onclick = async ()=>{
+            const majorId = document.getElementById("c-major").value; const name = document.getElementById("c-name").value.trim();
+            if(!majorId || !name) return alert("رشته و نام درس لازم است");
+            const r = await fetch("/api/taxonomy/courses", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({majorId, name})});
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); document.getElementById("c-name").value=""; await loadCourses(); await loadSources();
+          };
+          document.getElementById("c-del").onclick = async ()=>{
+            const id = document.getElementById("c-list").value; if(!id) return;
+            const r = await fetch("/api/taxonomy/courses/delete", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({id})});
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); await loadCourses(); await loadSources();
+          };
+
+          document.getElementById("s-course").addEventListener("change", loadSources);
+          document.getElementById("s-add").onclick = async ()=>{
+            const courseId = document.getElementById("s-course").value; const name = document.getElementById("s-name").value.trim();
+            if(!courseId || !name) return alert("درس و نام منبع لازم است");
+            const r = await fetch("/api/taxonomy/sources", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({courseId, name})});
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); document.getElementById("s-name").value=""; await loadSources(); await loadChapters();
+          };
+          document.getElementById("s-del").onclick = async ()=>{
+            const id = document.getElementById("s-list").value; if(!id) return;
+            const r = await fetch("/api/taxonomy/sources/delete", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({id})});
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); await loadSources(); await loadChapters();
+          };
+
+          document.getElementById("ch-source").addEventListener("change", loadChapters);
+          document.getElementById("ch-add").onclick = async ()=>{
+            const sourceId = document.getElementById("ch-source").value; const name = document.getElementById("ch-name").value.trim();
+            if(!sourceId || !name) return alert("منبع و نام فصل لازم است");
+            const r = await fetch("/api/taxonomy/chapters", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({sourceId, name})});
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); document.getElementById("ch-name").value=""; await loadChapters();
+          };
+          document.getElementById("ch-del").onclick = async ()=>{
+            const id = document.getElementById("ch-list").value; if(!id) return;
+            const r = await fetch("/api/taxonomy/chapters/delete", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({id})});
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); await loadChapters();
+          };
+
+          // others
+          document.getElementById("d-add").onclick = async ()=>{
+            const name = document.getElementById("d-name").value.trim(); if(!name) return alert("نام مقطع لازم است");
+            const r = await fetch("/api/taxonomy/degrees", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({name})});
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); document.getElementById("d-name").value=""; await loadDeg();
+          };
+          document.getElementById("d-del").onclick = async ()=>{
+            const id = document.getElementById("d-list").value; if(!id) return;
+            const r = await fetch("/api/taxonomy/degrees/delete", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({id})});
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); await loadDeg();
+          };
+
+          document.getElementById("mi-add").onclick = async ()=>{
+            const name = document.getElementById("mi-name").value.trim(); if(!name) return alert("نام وزارت لازم است");
+            const r = await fetch("/api/taxonomy/ministries", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({name})});
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); document.getElementById("mi-name").value=""; await loadMin();
+          };
+          document.getElementById("mi-del").onclick = async ()=>{
+            const id = document.getElementById("mi-list").value; if(!id) return;
+            const r = await fetch("/api/taxonomy/ministries/delete", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({id})});
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); await loadMin();
+          };
+
+          document.getElementById("y-add").onclick = async ()=>{
+            const name = document.getElementById("y-name").value.trim(); if(!name) return alert("سال را وارد کن");
+            const r = await fetch("/api/taxonomy/exam-years", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({name})});
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); document.getElementById("y-name").value=""; await loadYears();
+          };
+          document.getElementById("y-del").onclick = async ()=>{
+            const id = document.getElementById("y-list").value; if(!id) return;
+            const r = await fetch("/api/taxonomy/exam-years/delete", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({id})});
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); await loadYears();
+          };
+
+          // init
+          async function init(){
+            await loadMajors(); await loadCourses(); await loadSources(); await loadChapters();
+            await loadDeg(); await loadMin(); await loadYears();
+          }
+          init();
+        </script>
+      `;
+      return html(page("مدیریت تاکسونومی", body));
+    })();
   }
 
   return null;
-}
-
-function isAdmin(u: URL, r: Request, e: any): boolean {
-  const token = u.searchParams.get("token") || r.headers.get("x-admin-token");
-  return !!token && token === e.ADMIN_TOKEN;
-}
-
-function cascadeDelete(t: any, entity: Entity, id: string) {
-  const rem = (arr: any[], pred: (x: any) => boolean) => {
-    const removed: string[] = [];
-    for (let i = arr.length - 1; i >= 0; i--) if (pred(arr[i])) { removed.push(String(arr[i].id)); arr.splice(i, 1); }
-    return removed;
-  };
-
-  // حذف اصلی
-  const key = map[entity];
-  // @ts-ignore
-  rem(t[key], (x: any) => String(x.id) === String(id));
-
-  if (entity === "majors") {
-    const courseIds = rem(t.courses, (x: any) => String(x.parentId) === String(id));
-    const sourceIds = rem(t.sources, (x: any) => courseIds.includes(String(x.parentId)));
-    rem(t.chapters, (x: any) => sourceIds.includes(String(x.parentId)));
-  } else if (entity === "courses") {
-    const sourceIds = rem(t.sources, (x: any) => String(x.parentId) === String(id));
-    rem(t.chapters, (x: any) => sourceIds.includes(String(x.parentId)));
-  } else if (entity === "sources") {
-    rem(t.chapters, (x: any) => String(x.parentId) === String(id));
-  }
 }
