@@ -1,8 +1,8 @@
-// src/index.ts
 import { routeStudent } from "./routes/student";
 import { routeAdmin } from "./routes/admin";
 import { routeAuth } from "./routes/auth";
 import { routeManagement } from "./routes/management";
+import { routeTaxonomy } from "./routes/taxonomy";
 import { html } from "./lib/http";
 import { getSessionUser, requireRole } from "./lib/auth";
 
@@ -11,17 +11,12 @@ export default {
     const url = new URL(req.url);
     const p = url.pathname;
 
-    // 1) auth endpoints
+    // 1) auth
     { const r = routeAuth(req, url, env); if (r) return r; }
 
-    // 2) taxonomy APIs باید حتی برای GET هم به routeAdmin برسند.
-    //    نوشتن (POST/PUT/DELETE) قفل admin؛ خواندن (GET) آزاد.
-    if (p.startsWith("/api/taxonomy")) {
-      if (req.method !== "GET") {
-        const guard = await requireRole(req, env, "admin");
-        if (guard instanceof Response) return guard;
-      }
-      const r = routeAdmin(req, url, env); // ← همین باعث می‌شود GETها دوباره کار کنند
+    // 2) taxonomy (GET آزاد، نوشتن داخل taxonomy.ts قفل میشه)
+    if (p.startsWith("/api/taxonomy") || p === "/admin/taxonomy") {
+      const r = routeTaxonomy(req, url, env);
       if (r) return r;
     }
 
@@ -55,7 +50,7 @@ export default {
       if (r) return r;
     }
 
-    // 7) صفحه خانه — لینک‌های مدیریت را فقط وقتی نقش مناسب داریم نشان بده
+    // 7) صفحه خانه (لینک‌های مدیریتی فقط برای نقش مجاز)
     const me = await getSessionUser(req, env);
     const body = `
       <h1>Psynex Exam</h1>
@@ -63,9 +58,7 @@ export default {
         ${me ? `
           <div>ورود: <b>${me.email}</b> (${me.role}, ${me.planTier}) — <a href="/logout">خروج</a></div>
         ` : `
-          <div><a href="/login"><button>ورود</button></a> ${
-            (env.ALLOW_SELF_SIGNUP ?? "1")==="1" ? 'یا <a href="/signup"><button>ثبت‌نام</button></a>' : ''
-          }</div>
+          <div><a href="/login"><button>ورود</button></a></div>
         `}
         <ul>
           <li><a href="/student">صفحه دانشجو</a> (نیاز به ورود)</li>
