@@ -1,6 +1,13 @@
 // src/lib/users.ts
 import type { Role } from "./auth";
 
+export type PwHash = {
+  alg: "pbkdf2";
+  iter: number;
+  saltB64: string;
+  hashB64: string;
+};
+
 export type User = {
   email: string;
   name?: string;
@@ -11,6 +18,7 @@ export type User = {
   createdAt: number;
   updatedAt: number;
   status: "active" | "disabled";
+  pw?: PwHash; // ← پسورد هش‌شده (اختیاری)
 };
 
 const keyU = (email: string) => `user:${email.toLowerCase()}`;
@@ -33,6 +41,7 @@ export async function upsertUser(env: any, u: Partial<User> & { email: string })
     createdAt: prev?.createdAt ?? now,
     updatedAt: now,
     status: (u.status ?? prev?.status ?? "active"),
+    pw: u.pw ?? prev?.pw ?? undefined,
   };
   await env.DATA.put(keyU(next.email), JSON.stringify(next));
   return next;
@@ -57,4 +66,43 @@ export async function listUsers(env: any, limit = 1000): Promise<User[]> {
     cursor = res.cursor;
   }
   return out;
+}
+
+// ---------- Password helpers (PBKDF2-SHA256) ----------
+const enc = new TextEncoder();
+const b64 = {
+  enc: (buf: ArrayBuffer) => {
+    const b = String.fromCharCode(...new Uint8Array(buf));
+    return btoa(b);
+  }
+};
+
+async function pbkdf2(password: string, salt: Uint8Array, iter = 100_000, len = 32): Promise<ArrayBuffer> {
+  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  return crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: iter, hash: "SHA-256" },
+    key,
+    len * 8
+  );
+}
+
+export async function setUserPassword(env: any, email: string, plain: string, iter = 100_000) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = await pbkdf2(plain, salt, iter, 32);
+  const user = await upsertUser(env, {
+    email,
+    pw: { alg: "pbkdf2", iter, saltB64: b64.enc(salt), hashB64: b64.enc(hash) }
+  });
+  return user;
+}
+
+export async function verifyUserPassword(env: any, email: string, plain: string): Promise<User | null> {
+  const u = await getUserByEmail(env, email);
+  if (!u || !u.pw || u.status !== "active") return null;
+  try {
+    const salt = Uint8Array.from(atob(u.pw.saltB64), c => c.charCodeAt(0));
+    const bits = await pbkdf2(plain, salt, u.pw.iter, 32);
+    const h = b64.enc(bits);
+    return h === u.pw.hashB64 ? u : null;
+  } catch { return null; }
 }
