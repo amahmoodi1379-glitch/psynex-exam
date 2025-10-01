@@ -362,11 +362,12 @@ const examKey = (clientId: string, examId: string) => `exam:${clientId}:${examId
 const examResKey = (clientId: string, examId: string) => `examres:${clientId}:${examId}`;
 
 export function shuffle<T>(items: T[]): T[] {
-  for (let i = items.length - 1; i > 0; i--) {
+  const copy = items.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [items[i], items[j]] = [items[j], items[i]];
+    [copy[i], copy[j]] = [copy[j], copy[i]];
   }
-  return items;
+  return copy;
 }
 
 export async function sampleQuestions(
