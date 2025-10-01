@@ -442,6 +442,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             const sid = $("#source").value || "";
             await fill("chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
           };
+          await upd();
           $("#major").addEventListener("change", upd);
           $("#course").addEventListener("change", async () => {
             const cid = $("#course").value || "";
@@ -451,8 +452,6 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             const sid = $("#source").value || "";
             await fill("chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
           });
-          await new Promise(r=>setTimeout(r,100));
-          await upd();
         }
 
         function seenAdd(id) {
@@ -555,6 +554,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             const sid = $("#csource").value || "";
             await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
           };
+          await upd();
           $("#cmajor").addEventListener("change", upd);
           $("#ccourse").addEventListener("change", async () => {
             const cid = $("#ccourse").value || "";
@@ -564,8 +564,6 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             const sid = $("#csource").value || "";
             await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
           });
-          await new Promise(r=>setTimeout(r,100));
-          await upd();
         }
 
         async function fetchChallenge() {
@@ -609,9 +607,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             const mid = $("#qmajor").value || "";
             await fill("qcourse", "/api/taxonomy/courses?majorId="+encodeURIComponent(mid));
           };
-          $("#qmajor").addEventListener("change", upd);
-          await new Promise(r=>setTimeout(r,100));
           await upd();
+          $("#qmajor").addEventListener("change", upd);
         }
 
         function makeRatingSelect() {
@@ -820,6 +817,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             const sid = $("#x-source").value || "";
             await fill("x-chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid), "id", "name", true);
           };
+          await upd();
           $("#x-major").addEventListener("change", upd);
           $("#x-course").addEventListener("change", async () => {
             const cid = $("#x-course").value || "";
@@ -829,8 +827,6 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             const sid = $("#x-source").value || "";
             await fill("x-chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid), "id", "name", true);
           });
-          await new Promise(r=>setTimeout(r,100));
-          await upd();
         }
 
         function toggleExamFields() {
