@@ -361,7 +361,13 @@ export type ExamResult = {
 const examKey = (clientId: string, examId: string) => `exam:${clientId}:${examId}`;
 const examResKey = (clientId: string, examId: string) => `examres:${clientId}:${examId}`;
 
-function shuffle<T>(a: T[]): T[] { for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+export function shuffle<T>(items: T[]): T[] {
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [items[i], items[j]] = [items[j], items[i]];
+  }
+  return items;
+}
 
 export async function sampleQuestions(
   env: any,
@@ -391,8 +397,7 @@ export async function sampleQuestions(
   }
   if (!candidates.length) return [];
   // شافل و بُرش
-  for (let i=candidates.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [candidates[i],candidates[j]]=[candidates[j],candidates[i]]; }
-  return candidates.slice(0, need);
+  return shuffle(candidates).slice(0, need);
 }
 
 
