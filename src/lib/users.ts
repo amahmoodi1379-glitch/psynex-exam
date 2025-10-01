@@ -17,7 +17,7 @@ export type User = {
   planExpiresAt?: number | null;
   createdAt: number;
   updatedAt: number;
-  status: "active" | "disabled";
+  status: "active" | "disabled" | "pending";
   pw?: PwHash; // ← پسورد هش‌شده (اختیاری)
 };
 
