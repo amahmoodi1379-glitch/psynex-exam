@@ -242,7 +242,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       </style>
 
       <h1>صفحه دانشجو</h1>
-      <div class="tabbar">
+      <div class="tabbar app-tabs">
         <button data-tab="tab-single" class="active">تک‌سؤال‌ها</button>
         <button data-tab="tab-challenges">چالش‌ها</button>
         <button data-tab="tab-qa">پرسش‌های تشریحی</button>
@@ -271,9 +271,9 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           <button id="fetchBtn">یافتن سؤال</button>
         </div>
 
-        <div class="card" id="qbox" style="display:none">
-          <div id="stem" style="font-weight:600;margin-bottom:8px"></div>
-          <div id="opts"></div>
+        <div class="card question-shell" id="qbox" style="display:none">
+          <div id="stem" class="question-stem" style="font-weight:600;margin-bottom:8px"></div>
+          <div id="opts" class="options-stack"></div>
 
           <div style="margin-top:10px">
             <span>امتیاز کیفیت (اختیاری): </span>
@@ -305,9 +305,9 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           <button id="cfetchBtn">سؤال چالشی</button>
         </div>
 
-        <div class="card" id="cbox" style="display:none">
-          <div id="cstem" style="font-weight:600;margin-bottom:8px"></div>
-          <div id="copts"></div>
+        <div class="card question-shell" id="cbox" style="display:none">
+          <div id="cstem" class="question-stem" style="font-weight:600;margin-bottom:8px"></div>
+          <div id="copts" class="options-stack"></div>
 
           <div style="margin-top:10px">
             <span>کیفیت (اختیاری): </span>
@@ -322,7 +322,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       </div>
 
       <!-- پرسش‌های تشریحی -->
-      <div class="card tabsec" id="tab-qa">
+      <div class="card tabsec catalog-shell" id="tab-qa">
         <b>پرسش‌های تشریحی</b>
         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:end">
           <div><label>رشته (الزامی)</label> <select id="qmajor" required></select></div>
@@ -332,7 +332,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           <button id="qa-random">نمایش تصادفی</button>
         </div>
         <div id="qa-empty" class="muted" style="margin-top:8px">برای شروع، رشته را انتخاب کن و جستجو را بزن یا «نمایش تصادفی» را امتحان کن.</div>
-        <div id="qa-list" style="margin-top:8px; display:flex; flex-direction:column; gap:8px"></div>
+        <div id="qa-list" class="catalog-grid" style="margin-top:8px"></div>
       </div>
 
       <!-- آمار -->
@@ -358,7 +358,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       <!-- آزمون -->
       <div class="card tabsec" id="tab-exam">
         <b>آزمون</b>
-        <div id="exam-setup" style="display:block">
+        <div id="exam-setup" class="page-section" style="display:block">
           <div style="display:flex; gap:8px; align-items:end; flex-wrap:wrap">
             <div><label>نوع آزمون</label>
               <select id="x-mode">
@@ -378,14 +378,14 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           <div class="muted" style="margin-top:6px">در ترکیبی، ۱۰–۶۰٪ سؤالات از کنکور هستند (در صورت کمبود داده، نسبت خودکار تنظیم می‌شود).</div>
         </div>
 
-        <div id="exam-box" style="display:none">
-          <div style="display:flex; justify-content:space-between; align-items:center">
+        <div id="exam-box" class="question-shell" style="display:none">
+          <div class="question-head" style="display:flex; justify-content:space-between; align-items:center">
             <div>سؤال <span id="x-idx">1</span>/<span id="x-total">0</span></div>
             <div>زمان: <span id="x-timer">00:00</span></div>
           </div>
-          <div id="x-stem" style="font-weight:600;margin:10px 0"></div>
-          <div id="x-opts"></div>
-          <div style="margin-top:10px; display:flex; gap:8px">
+          <div id="x-stem" class="question-stem" style="font-weight:600;margin:10px 0"></div>
+          <div id="x-opts" class="options-stack"></div>
+          <div class="question-actions" style="margin-top:10px; display:flex; gap:8px">
             <button id="x-prev">قبلی</button>
             <button id="x-next">بعدی</button>
             <button id="x-submit" style="margin-right:auto">پایان آزمون</button>
@@ -393,9 +393,9 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           <div id="x-msg" class="muted" style="margin-top:8px"></div>
         </div>
 
-        <div id="exam-result" style="display:none" class="muted"></div>
+        <div id="exam-result" class="results-shell" style="display:none"></div>
         <button id="x-show-review" style="display:none; margin-top:8px">مشاهده پاسخنامه</button>
-        <div id="review-box" style="display:none; margin-top:8px"></div>
+        <div id="review-box" class="review-list" style="display:none; margin-top:8px"></div>
       </div>
 
       <script>
@@ -628,8 +628,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           }
           empty.style.display = "none";
           for (const it of items) {
-            const wrap = document.createElement("div");
-            wrap.className = "card";
+          const wrap = document.createElement("div");
+          wrap.className = "card catalog-card";
             wrap.dataset.id = it.id;
             wrap.dataset.type = it.type || "qa";
 
@@ -907,10 +907,18 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           $("#exam-box").style.display = "none";
           $("#exam-result").style.display = "block";
           const r = d.result;
-          $("#exam-result").innerHTML = "نتیجه: "+
-            "کل="+r.total+" — درست="+r.correct+" — غلط="+r.wrong+" — نزده="+r.blank+
-            "<br>درصد بدون نمره منفی: "+r.percentNoNeg+"%"+
-            "<br>درصد با نمره منفی (⅓-): "+r.percentWithNeg+"%";
+          $("#exam-result").innerHTML =
+            '<div class="results-header">' +
+              '<h2>نتیجه آزمون</h2>' +
+              '<p>عملکرد کلی: <span class="badge ltr">' + r.correct + ' درست / ' + r.total + ' سؤال</span></p>' +
+            '</div>' +
+            '<div class="metric-cards">' +
+              '<div class="metric-card"><h3>پاسخ‌های درست</h3><strong class="ltr">' + r.correct + '</strong></div>' +
+              '<div class="metric-card"><h3>پاسخ‌های غلط</h3><strong class="ltr">' + r.wrong + '</strong></div>' +
+              '<div class="metric-card"><h3>بدون پاسخ</h3><strong class="ltr">' + r.blank + '</strong></div>' +
+              '<div class="metric-card"><h3>درصد بدون نمره منفی</h3><strong class="ltr">' + r.percentNoNeg + '%</strong></div>' +
+              '<div class="metric-card"><h3>درصد با نمره منفی (⅓-)</h3><strong class="ltr">' + r.percentWithNeg + '%</strong></div>' +
+            '</div>';
           lastExamId = exam.examId;
           document.getElementById("x-show-review").style.display = "inline-block";
           document.getElementById("review-box").style.display = "none";
@@ -929,7 +937,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           box.innerHTML = "";
           for (const it of d.data) {
             const wrap = document.createElement("div");
-            wrap.className = "card";
+            wrap.className = "card review-card";
             wrap.style.marginTop = "6px";
 
             const head = document.createElement("div");
