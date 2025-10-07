@@ -5,6 +5,11 @@ workers_dev = true
 account_id = "169f8b1691604f746368e13b2d75dbc1"
 
 
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiterDO"
+
+
 [[kv_namespaces]]
 binding = "TAXO"
 id = "d37f216a7880402baebc0ea71e3b189b"   # همینی که خودت داری

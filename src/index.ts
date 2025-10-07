@@ -6,6 +6,7 @@ import { routeTaxonomy } from "./routes/taxonomy";
 import { html } from "./lib/http";
 import { getSessionUser, requireRole } from "./lib/auth";
 import { enforceRateLimit } from "./lib/rateLimit";
+export { RateLimiterDO } from "./rateLimiterDO";
 
 export default {
   async fetch(req: Request, env: any, ctx: ExecutionContext): Promise<Response> {
@@ -13,7 +14,7 @@ export default {
     const p = url.pathname;
 
     if (req.method !== "OPTIONS") {
-      const rateResponse = enforceRateLimit(req, env);
+      const rateResponse = await enforceRateLimit(req, env);
       if (rateResponse) return rateResponse;
     }
 

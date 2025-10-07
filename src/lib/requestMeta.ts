@@ -1,4 +1,4 @@
-export function getClientIp(req: Request): string {
+export function getClientIp(req: Request): string | null {
   const cf = req.headers.get("CF-Connecting-IP");
   if (cf && cf.trim()) return cf.trim();
 
@@ -11,7 +11,10 @@ export function getClientIp(req: Request): string {
   const real = req.headers.get("X-Real-IP");
   if (real && real.trim()) return real.trim();
 
-  return req.headers.get("Remote-Addr")?.trim() || "";
+  const remote = req.headers.get("Remote-Addr");
+  if (remote && remote.trim()) return remote.trim();
+
+  return null;
 }
 
 export function getUserAgent(req: Request): string {

@@ -71,10 +71,17 @@ export function clearSessionCookie(): string {
 }
 
 export async function registerSession(env: any, req: Request, email: string, sessionId: string): Promise<void> {
-  const meta: SessionMeta = { ip: getClientIp(req), ua: getUserAgent(req) };
+  const meta: SessionMeta = {};
+  const ip = getClientIp(req);
+  if (ip) meta.ip = ip;
+  const ua = getUserAgent(req);
+  if (ua) meta.ua = ua;
   const now = Date.now();
   const current = sanitizeSessions(await readSessions(env, email)).filter((s) => s.id !== sessionId);
-  current.push({ id: sessionId, createdAt: now, lastSeenAt: now, ip: meta.ip, ua: meta.ua });
+  const entry: StoredSession = { id: sessionId, createdAt: now, lastSeenAt: now };
+  if (meta.ip) entry.ip = meta.ip;
+  if (meta.ua) entry.ua = meta.ua;
+  current.push(entry);
   current.sort((a, b) => a.createdAt - b.createdAt);
 
   const max = getMaxSessions(env);
@@ -85,8 +92,8 @@ export async function registerSession(env: any, req: Request, email: string, ses
   await writeSessions(env, email, current);
 }
 
-export async function ensureSessionActive(env: any, req: Request, email: string, sessionId?: string): Promise<boolean> {
-  if (!sessionId) return true;
+export async function ensureSessionActive(env: any, req: Request, email: string, sessionId: string): Promise<boolean> {
+  if (!sessionId) return false;
   const now = Date.now();
   const rawSessions = await readSessions(env, email);
   const sessions = sanitizeSessions(rawSessions);
@@ -122,7 +129,7 @@ export async function ensureSessionActive(env: any, req: Request, email: string,
   return true;
 }
 
-export async function revokeSession(env: any, email: string, sessionId?: string): Promise<void> {
+export async function revokeSession(env: any, email: string, sessionId: string): Promise<void> {
   if (!sessionId) return;
   const sessions = sanitizeSessions(await readSessions(env, email));
   const next = sessions.filter((s) => s.id !== sessionId);

@@ -11,7 +11,7 @@ export type SessionPayload = {
   role: Role;
   planTier: "free" | "pro1" | "pro2" | "pro3";
   planExpiresAt?: number | null;
-  sessionId?: string;
+  sessionId: string;
   iat: number;
   exp: number;
 };
@@ -81,7 +81,7 @@ export async function getSessionUser(req: Request, env: any): Promise<SessionPay
   const t = c[SESSION_COOKIE_NAME];
   if (!t) return null;
   const payload = await verifyJWT<SessionPayload>(t, env.JWT_SECRET);
-  if (!payload) return null;
+  if (!payload || typeof payload.sessionId !== "string" || !payload.sessionId) return null;
   const active = await ensureSessionActive(env, req, payload.email, payload.sessionId);
   if (!active) return null;
   return payload;
