@@ -5,11 +5,17 @@ import { routeManagement } from "./routes/management";
 import { routeTaxonomy } from "./routes/taxonomy";
 import { html } from "./lib/http";
 import { getSessionUser, requireRole } from "./lib/auth";
+import { enforceRateLimit } from "./lib/rateLimit";
 
 export default {
   async fetch(req: Request, env: any, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     const p = url.pathname;
+
+    if (req.method !== "OPTIONS") {
+      const rateResponse = enforceRateLimit(req, env);
+      if (rateResponse) return rateResponse;
+    }
 
     // 1) auth
     { const r = routeAuth(req, url, env); if (r) return r; }

@@ -1,7 +1,9 @@
 // src/routes/auth.ts
 import { html, json } from "../lib/http";
-import { redirect, signJWT, getSessionUser } from "../lib/auth";
+import { redirect, signJWT, getSessionUser, parseCookies, verifyJWT } from "../lib/auth";
 import { getUserByEmail, upsertUser, setUserPassword, verifyUserPassword } from "../lib/users";
+import { registerSession, buildSessionCookie, clearSessionCookie, revokeSession, SESSION_COOKIE_NAME } from "../lib/sessionStore";
+import type { SessionPayload } from "../lib/auth";
 
 function isGmail(email: string) {
   return /@gmail\.com$/i.test(email);
@@ -328,20 +330,24 @@ export function routeAuth(req: Request, url: URL, env?: any): Response | null {
       await setUserPassword(env, email, password);
       const active = await upsertUser(env, { email, status: "active", role: user.role ?? "student" });
 
+      const sessionId = crypto.randomUUID();
       const token = await signJWT({
         email: active.email,
         name: active.name ?? "",
         picture: active.picture ?? "",
         role: active.role,
         planTier: active.planTier,
-        planExpiresAt: active.planExpiresAt ?? null
+        planExpiresAt: active.planExpiresAt ?? null,
+        sessionId,
       }, env.JWT_SECRET, 60*60*24*30);
+
+      await registerSession(env, req, active.email, sessionId);
 
       return new Response(JSON.stringify({ ok:true, to }), {
         status: 200,
         headers: {
           "content-type": "application/json",
-          "Set-Cookie": `sid=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${60*60*24*30}`
+          "Set-Cookie": buildSessionCookie(token)
         }
       });
     })();
@@ -365,16 +371,24 @@ export function routeAuth(req: Request, url: URL, env?: any): Response | null {
       const verified = await verifyUserPassword(env, email, password);
       if (!verified) return json({ ok:false, error:"invalid_credentials" }, 401);
 
+      const sessionId = crypto.randomUUID();
       const token = await signJWT({
-        email: verified.email, name: verified.name, picture: verified.picture, role: verified.role,
-        planTier: verified.planTier, planExpiresAt: verified.planExpiresAt ?? null
+        email: verified.email,
+        name: verified.name,
+        picture: verified.picture,
+        role: verified.role,
+        planTier: verified.planTier,
+        planExpiresAt: verified.planExpiresAt ?? null,
+        sessionId,
       }, env.JWT_SECRET, 60*60*24*30);
+
+      await registerSession(env, req, verified.email, sessionId);
 
       return new Response(JSON.stringify({ ok:true, to }), {
         status: 200,
         headers: {
           "content-type": "application/json",
-          "Set-Cookie": `sid=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${60*60*24*30}`
+          "Set-Cookie": buildSessionCookie(token)
         }
       });
     })();
@@ -447,17 +461,25 @@ export function routeAuth(req: Request, url: URL, env?: any): Response | null {
         u = await getUserByEmail(env, email);
       }
 
+      const sessionId = crypto.randomUUID();
       const token = await signJWT({
-        email: u!.email, name: u!.name, picture: u!.picture,
-        role: (u as any).role, planTier: (u as any).planTier, planExpiresAt: (u as any).planExpiresAt ?? null
+        email: u!.email,
+        name: u!.name,
+        picture: u!.picture,
+        role: (u as any).role,
+        planTier: (u as any).planTier,
+        planExpiresAt: (u as any).planExpiresAt ?? null,
+        sessionId,
       }, env.JWT_SECRET, 60*60*24*30);
+
+      await registerSession(env, req, u!.email, sessionId);
 
       const to = targetRole === "admin" ? "/admin" : "/management";
       return new Response(JSON.stringify({ ok:true, to }), {
         status: 200,
         headers: {
           "content-type": "application/json",
-          "Set-Cookie": `sid=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${60*60*24*30}`
+          "Set-Cookie": buildSessionCookie(token)
         }
       });
     })();
@@ -465,13 +487,23 @@ export function routeAuth(req: Request, url: URL, env?: any): Response | null {
 
   // ---------- خروج ----------
   if (p === "/logout") {
-    return new Response("", {
-      status: 302,
-      headers: {
-        "Set-Cookie": "sid=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0",
-        "Location": "/"
+    return (async () => {
+      const cookies = parseCookies(req);
+      const token = cookies[SESSION_COOKIE_NAME];
+      if (token) {
+        const payload = await verifyJWT<SessionPayload>(token, env.JWT_SECRET);
+        if (payload?.sessionId) {
+          await revokeSession(env, payload.email, payload.sessionId);
+        }
       }
-    });
+      return new Response("", {
+        status: 302,
+        headers: {
+          "Set-Cookie": clearSessionCookie(),
+          "Location": "/"
+        }
+      });
+    })();
   }
 
   // ---------- وضعیت من ----------
