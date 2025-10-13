@@ -1,4 +1,6 @@
 // src/lib/auth.ts
+import { ensureSessionActive, SESSION_COOKIE_NAME } from "./sessionStore";
+
 export type Role = "student" | "manager" | "admin";
 const roleRank: Record<Role, number> = { student: 1, admin: 2, manager: 3 };
 
@@ -13,6 +15,7 @@ export type SessionPayload = {
   role: Role;
   planTier: "free" | "pro1" | "pro2" | "pro3";
   planExpiresAt?: number | null;
+  sessionId: string;
   iat: number;
   exp: number;
 };
@@ -79,9 +82,13 @@ export function parseCookies(req: Request) {
 
 export async function getSessionUser(req: Request, env: any): Promise<SessionPayload | null> {
   const c = parseCookies(req);
-  const t = c["sid"];
+  const t = c[SESSION_COOKIE_NAME];
   if (!t) return null;
-  return await verifyJWT<SessionPayload>(t, env.JWT_SECRET);
+  const payload = await verifyJWT<SessionPayload>(t, env.JWT_SECRET);
+  if (!payload || typeof payload.sessionId !== "string" || !payload.sessionId) return null;
+  const active = await ensureSessionActive(env, req, payload.email, payload.sessionId);
+  if (!active) return null;
+  return payload;
 }
 
 export function redirect(url: string, headers: HeadersInit = {}) {
