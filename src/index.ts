@@ -62,8 +62,8 @@ export default {
         `}
         <ul>
           <li><a href="/student">صفحه دانشجو</a> (نیاز به ورود)</li>
-          ${me && (me.role === "manager" || me.role === "admin") ? `<li><a href="/management">مدیریت کاربران</a></li>` : ``}
-          ${me && me.role === "admin" ? `<li><a href="/admin">صفحه ادمین</a></li>` : ``}
+          ${me && me.role === "manager" ? `<li><a href="/management">مدیریت کاربران</a></li>` : ``}
+          ${me && (me.role === "admin" || me.role === "manager") ? `<li><a href="/admin">صفحه ادمین</a></li>` : ``}
         </ul>
       </div>
     `;

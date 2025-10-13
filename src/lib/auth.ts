@@ -1,6 +1,10 @@
 // src/lib/auth.ts
 export type Role = "student" | "manager" | "admin";
-const roleRank: Record<Role, number> = { student: 1, manager: 2, admin: 3 };
+const roleRank: Record<Role, number> = { student: 1, admin: 2, manager: 3 };
+
+export function hasRequiredRole(role: Role, minimum: Role) {
+  return roleRank[role] >= roleRank[minimum];
+}
 
 export type SessionPayload = {
   email: string;
@@ -86,7 +90,7 @@ export function redirect(url: string, headers: HeadersInit = {}) {
 
 export async function requireRole(req: Request, env: any, min: Role): Promise<SessionPayload | Response> {
   const u = await getSessionUser(req, env);
-  if (!u || roleRank[u.role] < roleRank[min]) {
+  if (!u || !hasRequiredRole(u.role, min)) {
     const uurl = new URL(req.url);
     const to = "/login?r=" + encodeURIComponent(uurl.pathname + uurl.search);
     return redirect(to);
