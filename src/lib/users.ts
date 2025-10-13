@@ -13,7 +13,7 @@ export type User = {
   name?: string;
   picture?: string;
   role: Role;
-  planTier: "free" | "pro1" | "pro2" | "pro3";
+  planTier: "free" | "level1" | "level2" | "level3";
   planExpiresAt?: number | null;
   createdAt: number;
   updatedAt: number;

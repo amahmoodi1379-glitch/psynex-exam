@@ -435,7 +435,7 @@ export function routeAuth(req: Request, url: URL, env?: any): Response | null {
       let u = await getUserByEmail(env, email);
       if (!u) {
         // کاربر جدید
-        await upsertUser(env, { email, role: targetRole, planTier: "pro2", status: "active" });
+        await upsertUser(env, { email, role: targetRole, planTier: "level2", status: "active" });
         if (password && password.length >= 8) await setUserPassword(env, email, password);
         else return json({ ok:false, error:"set_strong_password" }, 400);
         u = await getUserByEmail(env, email);

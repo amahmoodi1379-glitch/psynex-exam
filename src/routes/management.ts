@@ -91,9 +91,9 @@ export function routeManagement(req: Request, url: URL, env?: any): Response | n
             <div><label>پلن</label><br>
               <select id="plan">
                 <option value="free">free</option>
-                <option value="pro1">pro1</option>
-                <option value="pro2">pro2</option>
-                <option value="pro3">pro3</option>
+                <option value="level1">level1</option>
+                <option value="level2">level2</option>
+                <option value="level3">level3</option>
               </select>
             </div>
             <div><label>تمدید (روز)</label><br><input id="days" type="number" value="0" min="0" style="width:100px"></div>
@@ -127,7 +127,7 @@ export function routeManagement(req: Request, url: URL, env?: any): Response | n
               const upd = document.createElement('button'); upd.textContent='ویرایش';
               upd.onclick = async () => {
                 const role = prompt('نقش (student/manager/admin):', u.role) || u.role;
-                const plan = prompt('پلن (free/pro1/pro2/pro3):', u.planTier) || u.planTier;
+              const plan = prompt('پلن (free/level1/level2/level3):', u.planTier) || u.planTier;
                 const days = Number(prompt('تمدید روز (0=بدون تغییر):', '0') || '0');
                 const pwd  = prompt('پسورد جدید (خالی=بدون تغییر):', '') || '';
                 const res = await fetch('/api/users/update', { method:'POST', headers:{'content-type':'application/json'},
