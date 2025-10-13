@@ -5,6 +5,7 @@ import { routeManagement } from "./routes/management";
 import { routeTaxonomy } from "./routes/taxonomy";
 import { html } from "./lib/http";
 import { getSessionUser, requireRole } from "./lib/auth";
+import { routeBilling } from "./routes/billing";
 
 export default {
   async fetch(req: Request, env: any, ctx: ExecutionContext): Promise<Response> {
@@ -20,7 +21,15 @@ export default {
       if (r) return r;
     }
 
-    // 3) student APIs → نیاز به ورود
+    // 3) billing APIs → نیاز به ورود
+    if (p.startsWith("/api/billing")) {
+      const guard = await requireRole(req, env, "student");
+      if (guard instanceof Response) return guard;
+      const r = await routeBilling(req, url, env, guard);
+      if (r) return r;
+    }
+
+    // 4) student APIs → نیاز به ورود
     if (p.startsWith("/api/student")) {
       const guard = await requireRole(req, env, "student");
       if (guard instanceof Response) return guard;
@@ -28,13 +37,19 @@ export default {
       if (r) return r;
     }
 
-    // 4) management (manager+)
+    // 5) مدیریت پرداخت (callback)
+    if (p.startsWith("/billing/")) {
+      const r = await routeBilling(req, url, env);
+      if (r) return r;
+    }
+
+    // 6) management (manager+)
     if (p === "/management" || p.startsWith("/api/users")) {
       const r = routeManagement(req, url, env);
       if (r) return r;
     }
 
-    // 5) admin (admin فقط)
+    // 7) admin (admin فقط)
     if (p.startsWith("/admin") || p.startsWith("/api/admin")) {
       const guard = await requireRole(req, env, "admin");
       if (guard instanceof Response) return guard;
@@ -42,7 +57,7 @@ export default {
       if (r) return r;
     }
 
-    // 6) student page (نیاز به ورود)
+    // 8) student page (نیاز به ورود)
     if (p === "/student") {
       const guard = await requireRole(req, env, "student");
       if (guard instanceof Response) return guard;
@@ -50,7 +65,7 @@ export default {
       if (r) return r;
     }
 
-    // 7) صفحه خانه (لینک‌های مدیریتی فقط برای نقش مجاز)
+    // 9) صفحه خانه (لینک‌های مدیریتی فقط برای نقش مجاز)
     const me = await getSessionUser(req, env);
     const body = `
       <h1>Psynex Exam</h1>

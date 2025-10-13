@@ -1,5 +1,7 @@
 // src/routes/student.ts
 import { html, json, page } from "../lib/http";
+import { getSessionUser } from "../lib/auth";
+import { PLAN_CATALOG } from "../lib/billing";
 import {
   queryRandomQuestion, getQuestion, recordAnswer, upsertRating,
   chooseChallengeQuestion, listAnswersByClient, aggregateStatsFromLogs,
@@ -228,9 +230,36 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
     })();
   }
 
-  // --- صفحه دانشجو (۴ تب + پاسخنامه) ---
+  // --- صفحه دانشجو (۵ تب + پاسخنامه) ---
   if (p === "/student") {
-    const body = `
+    return (async () => {
+      const me = env ? await getSessionUser(req, env) : null;
+      const planCatalog = Object.entries(PLAN_CATALOG).map(([tier, plan]) => ({
+        tier,
+        title: plan.title,
+        label: plan.label,
+        months: plan.months,
+        priceTomans: plan.priceTomans,
+        description: plan.description,
+        highlight: plan.highlight ?? false,
+      }));
+      const fmt = new Intl.NumberFormat("fa-IR");
+      const planCards = planCatalog.map(plan => `
+        <div class="plan-card${plan.highlight ? " highlight" : ""}">
+          <div class="plan-label">${plan.label}</div>
+          <div class="plan-title">${plan.title}</div>
+          <div class="plan-price">${fmt.format(plan.priceTomans)} تومان</div>
+          <div class="plan-desc muted">${plan.description}</div>
+          <div class="plan-duration muted">مدت: ${plan.months} ماه</div>
+          <button class="plan-buy" data-tier="${plan.tier}">پرداخت با زرین‌پال</button>
+        </div>
+      `).join("");
+      const planMeta = {
+        planTier: me?.planTier ?? "free",
+        planExpiresAt: me?.planExpiresAt ?? null,
+      };
+
+      const body = `
       <style>
         .tabbar button{margin:0 4px;padding:6px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer}
         .tabbar button.active{background:#222;color:#fff;border-color:#222}
@@ -239,7 +268,17 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         .bar{width:6px;background:#888}
         .muted{color:#666}
         .hide{display:none}
+        .plan-grid{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
+        .plan-card{flex:1 1 240px;border:1px solid #ddd;border-radius:12px;padding:16px;background:#fff;display:flex;flex-direction:column;gap:8px;box-shadow:0 1px 2px rgba(0,0,0,0.05)}
+        .plan-card.highlight{border-color:#2d7a46;background:#f3fff6}
+        .plan-label{font-size:14px;color:#2d7a46;font-weight:600}
+        .plan-title{font-size:18px;font-weight:700}
+        .plan-price{font-size:22px;font-weight:700}
+        .plan-card button{margin-top:auto}
       </style>
+
+      <script id="plan-catalog" type="application/json">${JSON.stringify(planCatalog)}</script>
+      <script id="plan-meta" type="application/json">${JSON.stringify(planMeta)}</script>
 
       <h1>صفحه دانشجو</h1>
       <div class="tabbar">
@@ -248,6 +287,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         <button data-tab="tab-qa">پرسش‌های تشریحی</button>
         <button data-tab="tab-stats">آمار</button>
         <button data-tab="tab-exam">آزمون</button>
+        <button data-tab="tab-plans">اشتراک</button>
       </div>
 
       <!-- تک‌سؤال‌ها -->
@@ -398,8 +438,27 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         <div id="review-box" style="display:none; margin-top:8px"></div>
       </div>
 
+      <!-- اشتراک -->
+      <div class="card tabsec" id="tab-plans">
+        <b>انتخاب پلن اشتراک</b>
+        <div class="muted" style="margin-top:6px">پرداخت از طریق درگاه امن زرین‌پال انجام می‌شود. پس از موفقیت، پلن به صورت خودکار فعال خواهد شد.</div>
+        <div class="plan-grid">
+          ${planCards}
+        </div>
+        <div id="plan-status" class="muted" style="margin-top:10px"></div>
+      </div>
+
       <script>
         const $ = s => document.querySelector(s);
+
+        const planCatalogEl = document.getElementById('plan-catalog');
+        const planCatalog = planCatalogEl ? JSON.parse(planCatalogEl.textContent || '[]') : [];
+        if (planCatalogEl) planCatalogEl.remove();
+        const planMetaEl = document.getElementById('plan-meta');
+        const planMeta = planMetaEl ? JSON.parse(planMetaEl.textContent || '{}') : {};
+        if (planMetaEl) planMetaEl.remove();
+        const planByTier = {};
+        for (const p of planCatalog) planByTier[p.tier] = p;
 
         // تب‌ها
         const tabs = document.querySelectorAll('.tabbar button');
@@ -961,6 +1020,63 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           document.getElementById("x-show-review").scrollIntoView({ behavior: "smooth", block: "center" });
         }
 
+        function initPlans() {
+          const statusEl = document.getElementById('plan-status');
+          if (statusEl) {
+            if (!planMeta || planMeta.planTier === 'free') {
+              statusEl.textContent = 'پلن فعلی: رایگان. برای دسترسی کامل یکی از پلن‌ها را فعال کن.';
+            } else {
+              const info = planByTier[planMeta.planTier] || null;
+              let text = 'پلن فعلی: ' + (info ? info.title : planMeta.planTier);
+              if (planMeta.planExpiresAt) {
+                try {
+                  const fa = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'long' }).format(new Date(planMeta.planExpiresAt));
+                  text += ' — اعتبار تا ' + fa;
+                } catch {
+                  text += ' — اعتبار تا ' + new Date(planMeta.planExpiresAt).toLocaleDateString('fa-IR');
+                }
+              }
+              statusEl.textContent = text;
+            }
+          }
+
+          document.querySelectorAll('.plan-buy').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              const tier = btn.dataset.tier;
+              const info = tier ? planByTier[tier] : null;
+              if (!tier || !info) {
+                alert('پلن انتخابی معتبر نیست.');
+                return;
+              }
+              const confirmMsg = 'آیا می‌خواهی پرداخت پلن «' + info.title + '» آغاز شود؟';
+              if (!confirm(confirmMsg)) return;
+              btn.disabled = true;
+              const original = btn.textContent;
+              btn.textContent = 'در حال ایجاد لینک...';
+              if (statusEl) statusEl.textContent = 'در حال ارتباط با زرین‌پال...';
+              try {
+                const res = await fetch('/api/billing/zarinpal/create', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ planTier: tier })
+                });
+                const data = await res.json();
+                if (!data.ok || !data.payUrl) {
+                  const msg = data.error || 'خطا در ایجاد تراکنش';
+                  throw new Error(msg);
+                }
+                if (statusEl) statusEl.textContent = 'در حال انتقال به درگاه امن زرین‌پال...';
+                location.href = data.payUrl;
+              } catch (err) {
+                btn.disabled = false;
+                btn.textContent = original;
+                const msg = err?.message || String(err) || 'خطا رخ داد';
+                if (statusEl) statusEl.textContent = 'خطا: ' + msg;
+              }
+            });
+          });
+        }
+
         // رویدادها
         $("#fetchBtn").addEventListener("click", fetchRandom);
         $("#cfetchBtn").addEventListener("click", fetchChallenge);
@@ -983,11 +1099,13 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           await initCascadesQA();
           await initCascadesExam();
           toggleExamFields();
+          initPlans();
         }
         initAll();
       </script>
     `;
-    return html(page("دانشجو", body));
+      return html(page("دانشجو", body));
+    })();
   }
 
   return null;
