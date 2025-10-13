@@ -17,3 +17,7 @@ id = "4e7f0f74153241fd818cd00be53a18b7"    # همینی که خودت داری
 name = "USAGE_COUNTER"
 class_name = "UsageCounterDurableObject"
 
+[[migrations]]
+tag = "v1"
+new_classes = ["UsageCounterDurableObject"]
+
