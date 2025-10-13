@@ -4,6 +4,7 @@ import { routeAuth } from "./routes/auth";
 import { routeManagement } from "./routes/management";
 import { routeTaxonomy } from "./routes/taxonomy";
 import { html } from "./lib/http";
+import { UsageCounterDurableObject } from "./do/usageCounter";
 import { getSessionUser, requireRole } from "./lib/auth";
 import { routeBilling } from "./routes/billing";
 
@@ -85,3 +86,5 @@ export default {
     return html(body);
   }
 }
+
+export { UsageCounterDurableObject };

@@ -73,17 +73,6 @@ export function formatUsageDateKey(date: Date = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
-export async function readUsageCounters(env: any, email: string, dayKey: string): Promise<UsageCounters> {
-  const raw = await env.DATA.get(usageKey(email, dayKey));
-  if (!raw) return cloneCounters(null);
-  try {
-    const parsed = JSON.parse(raw) as Partial<UsageCounters>;
-    return cloneCounters(parsed);
-  } catch {
-    return cloneCounters(null);
-  }
-}
-
 const LIMIT_KEY_BY_FIELD: Record<UsageField, keyof DailyUsageLimit> = {
   exams: "maxExamsPerDay",
   talifiExams: "maxTalifiExamsPerDay",
@@ -101,7 +90,45 @@ export function isLimitReached(
   const max = limits[key];
   if (max === null) return false;
   const current = counters[field] ?? 0;
-  return current + nextIncrement - 1 >= max;
+  return current + nextIncrement > max;
+}
+
+async function getUsageStub(env: any, email: string, dayKey: string) {
+  if (!env?.USAGE_COUNTER) return null;
+  try {
+    const id = env.USAGE_COUNTER.idFromName(`${email}:${dayKey}`);
+    return env.USAGE_COUNTER.get(id);
+  } catch {
+    return null;
+  }
+}
+
+export async function readUsageCounters(env: any, email: string, dayKey: string): Promise<UsageCounters> {
+  const stub = await getUsageStub(env, email, dayKey);
+  if (stub) {
+    const res = await stub.fetch("https://usage/counters", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "read" }),
+    });
+    if (res.ok) {
+      try {
+        const payload = (await res.json()) as Partial<UsageCounters> | null;
+        return cloneCounters(payload);
+      } catch {
+        return cloneCounters(null);
+      }
+    }
+  }
+
+  const raw = await env.DATA.get(usageKey(email, dayKey));
+  if (!raw) return cloneCounters(null);
+  try {
+    const parsed = JSON.parse(raw) as Partial<UsageCounters>;
+    return cloneCounters(parsed);
+  } catch {
+    return cloneCounters(null);
+  }
 }
 
 export async function incrementUsageCounter(
@@ -112,7 +139,22 @@ export async function incrementUsageCounter(
   amount = 1,
   current?: UsageCounters | null,
 ): Promise<UsageCounters> {
-  const counters = cloneCounters(current);
+  const stub = await getUsageStub(env, email, dayKey);
+  if (stub) {
+    const res = await stub.fetch("https://usage/counters", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "increment", field, amount }),
+    });
+    if (!res.ok) {
+      throw new Error(`usage_counter_increment_failed:${res.status}`);
+    }
+    const payload = (await res.json()) as Partial<UsageCounters>;
+    return cloneCounters(payload);
+  }
+
+  const baseline = current ?? (await readUsageCounters(env, email, dayKey));
+  const counters = cloneCounters(baseline);
   counters[field] = (counters[field] ?? 0) + amount;
   await env.DATA.put(usageKey(email, dayKey), JSON.stringify(counters), {
     expirationTtl: 60 * 60 * 24 * 3,

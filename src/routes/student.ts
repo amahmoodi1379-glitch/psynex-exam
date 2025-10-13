@@ -27,20 +27,20 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       })
     : Promise.resolve(null);
 
-  function ensureSession(me: Awaited<typeof sessionPromise> | null) {
+  function requireSession<T>(me: T | null): { response: Response } | { user: T } {
     if (!me) {
-      return json({ ok: false, error: "unauthorized" }, 401);
+      return { response: json({ ok: false, error: "unauthorized" }, 401) };
     }
-    return null;
+    return { user: me };
   }
 
 
   // --- API: سؤال تصادفی ---
   if (p === "/api/student/random" && req.method === "GET") {
     return (async () => {
-      const me = await sessionPromise;
-      const guard = ensureSession(me);
-      if (guard) return guard;
+      const maybe = requireSession(await sessionPromise);
+      if ("response" in maybe) return maybe.response;
+      const me = maybe.user;
       const type = ((url.searchParams.get("type") || "konkur") as "konkur"|"talifi"|"qa");
       const majorId = url.searchParams.get("majorId");
       if (!majorId) return json({ ok: false, error: "majorId required" }, 400);
@@ -59,9 +59,9 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       let counters;
       let dayKey: string | null = null;
       if (type === "talifi") {
-        const limits = getDailyUsageLimits(me!.planTier);
+        const limits = getDailyUsageLimits(me.planTier);
         dayKey = formatUsageDateKey();
-        counters = await readUsageCounters(env, me!.email, dayKey);
+        counters = await readUsageCounters(env, me.email, dayKey);
         if (isLimitReached(limits, "randomTalifi", counters, 1)) {
           return json({ ok: false, error: "usage_limit_reached", field: "randomTalifi" }, 429);
         }
@@ -69,7 +69,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       const q = await queryRandomQuestion(env, type, filters);
       if (!q) return json({ ok: false, error: "no_question" }, 404);
       if (type === "talifi" && dayKey) {
-        counters = await incrementUsageCounter(env, me!.email, dayKey, "randomTalifi", 1, counters);
+        counters = await incrementUsageCounter(env, me.email, dayKey, "randomTalifi", 1, counters);
       }
 
       const safe = {
@@ -203,9 +203,9 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   if (p === "/api/student/exam/start" && req.method === "POST") {
     return (async () => {
       try {
-        const me = await sessionPromise;
-        const guard = ensureSession(me);
-        if (guard) return guard;
+        const maybe = requireSession(await sessionPromise);
+        if ("response" in maybe) return maybe.response;
+        const me = maybe.user;
         const body = await req.json();
         const clientId = String(body?.clientId || "");
         const mode = (String(body?.mode || "konkur") as "konkur"|"mixed"|"talifi");
@@ -217,15 +217,15 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         const durationMin = Math.max(1, Math.min(180, Number(body?.durationMin || 10)));
 
         if (!clientId) return json({ ok: false, error: "bad_request" }, 400);
-        if (!majorId)  return json({ ok: false, error: "majorId required" }, 400);
+        if (!majorId) return json({ ok: false, error: "majorId required" }, 400);
         if ((mode === "konkur" || mode === "mixed") && !courseId) {
           return json({ ok: false, error: "courseId required" }, 400);
         }
         if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
 
-        const planLimits = getDailyUsageLimits(me!.planTier);
+        const planLimits = getDailyUsageLimits(me.planTier);
         const dayKey = formatUsageDateKey();
-        let counters = await readUsageCounters(env, me!.email, dayKey);
+        let counters = await readUsageCounters(env, me.email, dayKey);
 
         if (isLimitReached(planLimits, "exams", counters, 1)) {
           return json({ ok: false, error: "usage_limit_reached", field: "exams" }, 429);
@@ -234,11 +234,12 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           return json({ ok: false, error: "usage_limit_reached", field: "talifiExams" }, 429);
         }
 
-        if (mode === "talifi" && me!.planTier === "free") {
-          const freeLimits = getDailyUsageLimits("free");
-          if (freeLimits.maxTalifiQuestionsPerExamFree !== null && count > freeLimits.maxTalifiQuestionsPerExamFree) {
-            return json({ ok: false, error: "talifi_question_limit" }, 400);
-          }
+        if (
+          mode === "talifi" &&
+          planLimits.maxTalifiQuestionsPerExamFree !== null &&
+          count > planLimits.maxTalifiQuestionsPerExamFree
+        ) {
+          return json({ ok: false, error: "talifi_question_limit" }, 400);
         }
 
         const { id, questions, durationSec } = await createExamDraft(
@@ -249,9 +250,9 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           count,
           durationMin * 60
         );
-        counters = await incrementUsageCounter(env, me!.email, dayKey, "exams", 1, counters);
+        counters = await incrementUsageCounter(env, me.email, dayKey, "exams", 1, counters);
         if (mode === "talifi") {
-          counters = await incrementUsageCounter(env, me!.email, dayKey, "talifiExams", 1, counters);
+          counters = await incrementUsageCounter(env, me.email, dayKey, "talifiExams", 1, counters);
         }
         return json({ ok: true, examId: id, questions, durationSec });
       } catch (e: any) {
