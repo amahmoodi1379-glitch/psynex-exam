@@ -345,9 +345,27 @@ export function routeTaxonomy(req: Request, url: URL, env?: any): Response | nul
             const mid = document.getElementById("c-major").value || (majors[0]?.id||"");
             return fill("c-list", "/api/taxonomy/courses?majorId="+encodeURIComponent(mid));
           }
-          async function loadSources(){
-            const courses = await fill("s-course", "/api/taxonomy/courses");
-            const cid = document.getElementById("s-course").value || (courses[0]?.id||"");
+          async function loadSources(refreshCourses = false){
+            const courseSelect = document.getElementById("s-course");
+            if(!courseSelect) return;
+            const selectEl = /** @type {HTMLSelectElement} */ (courseSelect);
+            const previousSelection = selectEl.value;
+
+            let courses;
+            if (refreshCourses || !selectEl.options.length) {
+              courses = await fill("s-course", "/api/taxonomy/courses");
+              if (previousSelection && courses.some(c=>c.id===previousSelection)) {
+                selectEl.value = previousSelection;
+              } else if (courses.length) {
+                selectEl.value = courses[0].id;
+              } else {
+                selectEl.value = "";
+              }
+            } else if (!selectEl.value && selectEl.options.length) {
+              selectEl.value = selectEl.options[0].value;
+            }
+
+            const cid = selectEl.value || "";
             return fill("s-list", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
           }
           async function loadChapters(){
@@ -373,15 +391,15 @@ export function routeTaxonomy(req: Request, url: URL, env?: any): Response | nul
             const majorId = document.getElementById("c-major").value; const name = document.getElementById("c-name").value.trim();
             if(!majorId || !name) return alert("رشته و نام درس لازم است");
             const r = await fetch("/api/taxonomy/courses", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({majorId, name})});
-            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); document.getElementById("c-name").value=""; await loadCourses(); await loadSources();
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); document.getElementById("c-name").value=""; await loadCourses(); await loadSources(true);
           };
           document.getElementById("c-del").onclick = async ()=>{
             const id = document.getElementById("c-list").value; if(!id) return;
             const r = await fetch("/api/taxonomy/courses/delete", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({id})});
-            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); await loadCourses(); await loadSources();
+            const d = await r.json(); if(!d.ok) return alert(d.error||"خطا"); await loadCourses(); await loadSources(true);
           };
 
-          document.getElementById("s-course").addEventListener("change", loadSources);
+          document.getElementById("s-course").addEventListener("change", ()=>loadSources());
           document.getElementById("s-add").onclick = async ()=>{
             const courseId = document.getElementById("s-course").value; const name = document.getElementById("s-name").value.trim();
             if(!courseId || !name) return alert("درس و نام منبع لازم است");
@@ -443,7 +461,7 @@ export function routeTaxonomy(req: Request, url: URL, env?: any): Response | nul
 
           // init
           async function init(){
-            await loadMajors(); await loadCourses(); await loadSources(); await loadChapters();
+            await loadMajors(); await loadCourses(); await loadSources(true); await loadChapters();
             await loadDeg(); await loadMin(); await loadYears();
           }
           init();
