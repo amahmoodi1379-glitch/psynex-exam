@@ -3,6 +3,13 @@ import { html, json, page } from "../lib/http";
 import { getSessionUser } from "../lib/auth";
 import { PLAN_CATALOG } from "../lib/billing";
 import {
+  formatUsageDateKey,
+  getDailyUsageLimits,
+  incrementUsageCounter,
+  isLimitReached,
+  readUsageCounters,
+} from "../lib/usageLimits";
+import {
   queryRandomQuestion, getQuestion, recordAnswer, upsertRating,
   chooseChallengeQuestion, listAnswersByClient, aggregateStatsFromLogs,
   createExamDraft, gradeExam, getExamReview, listQuestions
@@ -10,10 +17,30 @@ import {
 
 export function routeStudent(req: Request, url: URL, env?: any): Response | null {
   const p = url.pathname;
+  const sessionPromise: Promise<Awaited<ReturnType<typeof getSessionUser>> | null> = env
+    ? getSessionUser(req, env).then(user => {
+        if (!user) return null;
+        if (user.planTier !== "free" && user.planExpiresAt && user.planExpiresAt < Date.now()) {
+          return { ...user, planTier: "free", planExpiresAt: null } as typeof user;
+        }
+        return user;
+      })
+    : Promise.resolve(null);
+
+  function requireSession<T>(me: T | null): { response: Response } | { user: T } {
+    if (!me) {
+      return { response: json({ ok: false, error: "unauthorized" }, 401) };
+    }
+    return { user: me };
+  }
+
 
   // --- API: سؤال تصادفی ---
   if (p === "/api/student/random" && req.method === "GET") {
     return (async () => {
+      const maybe = requireSession(await sessionPromise);
+      if ("response" in maybe) return maybe.response;
+      const me = maybe.user;
       const type = ((url.searchParams.get("type") || "konkur") as "konkur"|"talifi"|"qa");
       const majorId = url.searchParams.get("majorId");
       if (!majorId) return json({ ok: false, error: "majorId required" }, 400);
@@ -29,8 +56,21 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       };
 
       if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+      let counters;
+      let dayKey: string | null = null;
+      if (type === "talifi") {
+        const limits = getDailyUsageLimits(me.planTier);
+        dayKey = formatUsageDateKey();
+        counters = await readUsageCounters(env, me.email, dayKey);
+        if (isLimitReached(limits, "randomTalifi", counters, 1)) {
+          return json({ ok: false, error: "usage_limit_reached", field: "randomTalifi" }, 429);
+        }
+      }
       const q = await queryRandomQuestion(env, type, filters);
       if (!q) return json({ ok: false, error: "no_question" }, 404);
+      if (type === "talifi" && dayKey) {
+        counters = await incrementUsageCounter(env, me.email, dayKey, "randomTalifi", 1, counters);
+      }
 
       const safe = {
         id: q.id,
@@ -163,6 +203,9 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   if (p === "/api/student/exam/start" && req.method === "POST") {
     return (async () => {
       try {
+        const maybe = requireSession(await sessionPromise);
+        if ("response" in maybe) return maybe.response;
+        const me = maybe.user;
         const body = await req.json();
         const clientId = String(body?.clientId || "");
         const mode = (String(body?.mode || "konkur") as "konkur"|"mixed"|"talifi");
@@ -174,11 +217,30 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         const durationMin = Math.max(1, Math.min(180, Number(body?.durationMin || 10)));
 
         if (!clientId) return json({ ok: false, error: "bad_request" }, 400);
-        if (!majorId)  return json({ ok: false, error: "majorId required" }, 400);
+        if (!majorId) return json({ ok: false, error: "majorId required" }, 400);
         if ((mode === "konkur" || mode === "mixed") && !courseId) {
           return json({ ok: false, error: "courseId required" }, 400);
         }
         if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+
+        const planLimits = getDailyUsageLimits(me.planTier);
+        const dayKey = formatUsageDateKey();
+        let counters = await readUsageCounters(env, me.email, dayKey);
+
+        if (isLimitReached(planLimits, "exams", counters, 1)) {
+          return json({ ok: false, error: "usage_limit_reached", field: "exams" }, 429);
+        }
+        if (mode === "talifi" && isLimitReached(planLimits, "talifiExams", counters, 1)) {
+          return json({ ok: false, error: "usage_limit_reached", field: "talifiExams" }, 429);
+        }
+
+        if (
+          mode === "talifi" &&
+          planLimits.maxTalifiQuestionsPerExamFree !== null &&
+          count > planLimits.maxTalifiQuestionsPerExamFree
+        ) {
+          return json({ ok: false, error: "talifi_question_limit" }, 400);
+        }
 
         const { id, questions, durationSec } = await createExamDraft(
           env,
@@ -188,6 +250,10 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           count,
           durationMin * 60
         );
+        counters = await incrementUsageCounter(env, me.email, dayKey, "exams", 1, counters);
+        if (mode === "talifi") {
+          counters = await incrementUsageCounter(env, me.email, dayKey, "talifiExams", 1, counters);
+        }
         return json({ ok: true, examId: id, questions, durationSec });
       } catch (e: any) {
         const msg = String(e?.message || e);
@@ -233,7 +299,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   // --- صفحه دانشجو (۵ تب + پاسخنامه) ---
   if (p === "/student") {
     return (async () => {
-      const me = env ? await getSessionUser(req, env) : null;
+      const me = await sessionPromise;
       const planCatalog = Object.entries(PLAN_CATALOG).map(([tier, plan]) => ({
         tier,
         title: plan.title,

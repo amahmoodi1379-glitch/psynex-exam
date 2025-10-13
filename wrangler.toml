@@ -13,3 +13,11 @@ id = "d37f216a7880402baebc0ea71e3b189b"   # همینی که خودت داری
 binding = "DATA"
 id = "4e7f0f74153241fd818cd00be53a18b7"    # همینی که خودت داری
 
+[[durable_objects.bindings]]
+name = "USAGE_COUNTER"
+class_name = "UsageCounterDurableObject"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["UsageCounterDurableObject"]
+
