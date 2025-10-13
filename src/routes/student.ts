@@ -1048,7 +1048,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
                 alert('پلن انتخابی معتبر نیست.');
                 return;
               }
-              if (!confirm(`آیا می‌خواهی پرداخت پلن «${info.title}» آغاز شود؟`)) return;
+              const confirmMsg = 'آیا می‌خواهی پرداخت پلن «' + info.title + '» آغاز شود؟';
+              if (!confirm(confirmMsg)) return;
               btn.disabled = true;
               const original = btn.textContent;
               btn.textContent = 'در حال ایجاد لینک...';
