@@ -1094,10 +1094,20 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
               baseText += ' — اعتبار تا ' + new Date(planMeta.planExpiresAt).toLocaleDateString('fa-IR');
             }
           }
-          const blocks = [`<div>${baseText}</div>`];
+          const blocks = ['<div>' + baseText + '</div>'];
           if (planMeta.dailyLimits) {
             const dl = planMeta.dailyLimits;
-            blocks.push(`<div class="plan-meta-limits">سقف روزانه: ${priceFmt.format(dl.randomQuestionsPerDay)} سؤال تصادفی • ${priceFmt.format(dl.challengeQuestionsPerDay)} سؤال چالشی • ${priceFmt.format(dl.examsPerDay)} آزمون • ${priceFmt.format(dl.qaSessionsPerDay)} مرور تشریحی</div>`);
+            blocks.push(
+              '<div class="plan-meta-limits">سقف روزانه: ' +
+              priceFmt.format(dl.randomQuestionsPerDay) +
+              ' سؤال تصادفی • ' +
+              priceFmt.format(dl.challengeQuestionsPerDay) +
+              ' سؤال چالشی • ' +
+              priceFmt.format(dl.examsPerDay) +
+              ' آزمون • ' +
+              priceFmt.format(dl.qaSessionsPerDay) +
+              ' مرور تشریحی</div>'
+            );
           }
           if (planMeta.featureFlags) {
             const activeFlags = Object.entries(planMeta.featureFlags)
@@ -1105,7 +1115,11 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
               .map(([key]) => flagLabelMap[key] || '')
               .filter(Boolean);
             if (activeFlags.length) {
-              blocks.push('<div class="plan-meta-tags">' + activeFlags.map(label => `<span>${label}</span>`).join('') + '</div>');
+              blocks.push(
+                '<div class="plan-meta-tags">' +
+                activeFlags.map(label => '<span>' + label + '</span>').join('') +
+                '</div>'
+              );
             }
           }
           statusEl.classList.remove('muted');
