@@ -3,24 +3,25 @@ import { html, json, page } from "../lib/http";
 import { getSessionUser, signJWT } from "../lib/auth";
 import { getUserByEmail, upsertUser } from "../lib/users";
 import {
-  PLAN_CATALOG,
   getPlanDefinition,
+  getPlanDuration,
   monthsToMs,
   saveBillingRequest,
   getBillingRequest,
   updateBillingRequest,
+  type PlanDefinition,
+  type PlanDuration,
   type PlanTier,
 } from "../lib/billing";
 
 const MERCHANT_ID = "27dfac21-23c3-4da7-b5d1-4d0ac3e6a65b";
 
-function paymentRequestBody(planTier: PlanTier, amountRials: number, callbackUrl: string, email: string) {
-  const def = PLAN_CATALOG[planTier];
+function paymentRequestBody(plan: PlanDefinition & { tier: PlanTier }, duration: PlanDuration, amountRials: number, callbackUrl: string, email: string) {
   return {
     merchant_id: MERCHANT_ID,
     amount: amountRials,
     callback_url: callbackUrl,
-    description: `پرداخت اشتراک ${def.title}`,
+    description: `پرداخت اشتراک ${plan.title} (${duration.label})`,
     metadata: {
       email,
     },
@@ -58,10 +59,20 @@ export async function routeBilling(req: Request, url: URL, env?: any, session?: 
       const planTier = String(body?.planTier || "");
       const plan = getPlanDefinition(planTier);
       if (!plan) return json({ ok: false, error: "invalid_plan" }, 400);
+      if (!plan.available || plan.durations.length === 0) {
+        return json({ ok: false, error: "plan_unavailable" }, 400);
+      }
+
+      const months = Number(body?.months || 0);
+      if (!Number.isFinite(months) || months <= 0) {
+        return json({ ok: false, error: "invalid_duration" }, 400);
+      }
+      const duration = getPlanDuration(plan, months);
+      if (!duration) return json({ ok: false, error: "invalid_duration" }, 400);
 
       const callbackUrl = new URL("/billing/zarinpal/callback", url);
-      const amountRials = plan.priceTomans * 10;
-      const payload = paymentRequestBody(plan.tier, amountRials, callbackUrl.toString(), me.email);
+      const amountRials = duration.priceTomans * 10;
+      const payload = paymentRequestBody(plan, duration, amountRials, callbackUrl.toString(), me.email);
 
       let zrRes: Response;
       try {
@@ -92,8 +103,10 @@ export async function routeBilling(req: Request, url: URL, env?: any, session?: 
         authority,
         email: me.email,
         planTier: plan.tier,
-        months: plan.months,
-        amountTomans: plan.priceTomans,
+        durationId: duration.id,
+        durationLabel: duration.label,
+        months: duration.months,
+        amountTomans: duration.priceTomans,
         amountRials,
         status: "pending" as const,
         createdAt: Date.now(),
@@ -180,7 +193,7 @@ export async function routeBilling(req: Request, url: URL, env?: any, session?: 
 
       const now = Date.now();
       const base = me.planExpiresAt && me.planExpiresAt > now ? me.planExpiresAt : now;
-      const expiresAt = base + monthsToMs(plan.months);
+      const expiresAt = base + monthsToMs(record.months);
 
       await upsertUser(env, { email: me.email, planTier: plan.tier, planExpiresAt: expiresAt });
       const updatedUser = await getUserByEmail(env, me.email);
@@ -195,7 +208,7 @@ export async function routeBilling(req: Request, url: URL, env?: any, session?: 
 
       const successBody = `<div class="card">
         <h2>پرداخت موفق بود</h2>
-        <p>پلن ${plan.title} برای شما فعال شد.</p>
+        <p>پلن ${plan.title}${record.durationLabel ? ` (${record.durationLabel})` : ""} برای شما فعال شد.</p>
         <p>تاریخ انقضا: ${formatDateFa(expiresAt)}</p>
         ${refId ? `<p>شناسه پیگیری زرین‌پال: <code>${refId}</code></p>` : ""}
         <p><a href="/student">بازگشت به صفحه دانشجو</a></p>

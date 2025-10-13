@@ -11,7 +11,7 @@ export type SessionPayload = {
   name?: string;
   picture?: string;
   role: Role;
-  planTier: "free" | "pro1" | "pro2" | "pro3";
+  planTier: "free" | "level1" | "level2" | "level3";
   planExpiresAt?: number | null;
   iat: number;
   exp: number;

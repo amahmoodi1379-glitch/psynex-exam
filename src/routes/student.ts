@@ -1,7 +1,7 @@
 // src/routes/student.ts
 import { html, json, page } from "../lib/http";
 import { getSessionUser } from "../lib/auth";
-import { PLAN_CATALOG } from "../lib/billing";
+import { PLAN_CATALOG, getPlanDefinition } from "../lib/billing";
 import {
   queryRandomQuestion, getQuestion, recordAnswer, upsertRating,
   chooseChallengeQuestion, listAnswersByClient, aggregateStatsFromLogs,
@@ -236,27 +236,54 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       const me = env ? await getSessionUser(req, env) : null;
       const planCatalog = Object.entries(PLAN_CATALOG).map(([tier, plan]) => ({
         tier,
-        title: plan.title,
-        label: plan.label,
-        months: plan.months,
-        priceTomans: plan.priceTomans,
-        description: plan.description,
-        highlight: plan.highlight ?? false,
+        ...plan,
       }));
+      const featureFlagLabels = {
+        qaBank: "بانک تشریحی",
+        challengeHub: "چالش هوشمند",
+        examBuilder: "ساخت آزمون",
+        analytics: "گزارش‌گیری",
+        prioritySupport: "پشتیبانی ویژه",
+        aiCoach: "دستیار هوشمند",
+      } as const;
       const fmt = new Intl.NumberFormat("fa-IR");
-      const planCards = planCatalog.map(plan => `
-        <div class="plan-card${plan.highlight ? " highlight" : ""}">
-          <div class="plan-label">${plan.label}</div>
+      const planCards = planCatalog.map(plan => {
+        const featureItems = plan.features.map(f => `<li>${f}</li>`).join("");
+        const tags = Object.entries(plan.featureFlags)
+          .filter(([, enabled]) => !!enabled)
+          .map(([key]) => featureFlagLabels[key as keyof typeof featureFlagLabels] ? `<span>${featureFlagLabels[key as keyof typeof featureFlagLabels]}</span>` : "")
+          .filter(Boolean)
+          .join("");
+        const limits = plan.dailyLimits;
+        const limitsText = `سقف روزانه: ${fmt.format(limits.randomQuestionsPerDay)} سؤال تصادفی • ${fmt.format(limits.challengeQuestionsPerDay)} سؤال چالشی • ${fmt.format(limits.examsPerDay)} آزمون • ${fmt.format(limits.qaSessionsPerDay)} مرور تشریحی`;
+        const durations = (plan.available && plan.durations.length)
+          ? `<div class="plan-durations">${plan.durations.map(duration => {
+              const price = fmt.format(duration.priceTomans);
+              const savings = duration.savingsLabel ? `<span class=\"plan-save\">${duration.savingsLabel}</span>` : "";
+              return `<button class=\"plan-buy\" data-tier=\"${plan.tier}\" data-months=\"${duration.months}\" data-price=\"${duration.priceTomans}\" data-label=\"${duration.label}\"><span class=\"plan-buy-label\">${duration.label}</span><span class=\"plan-buy-price\">${price} تومان</span>${savings}</button>`;
+            }).join("")}</div>`
+          : `<div class="plan-coming-soon">${plan.comingSoonText || "به‌زودی"}</div>`;
+        const badge = plan.highlight ? `<div class="plan-badge">پیشنهادی</div>` : "";
+        const tagsBlock = tags ? `<div class="plan-tags">${tags}</div>` : "";
+        return `
+        <div class="plan-card${plan.highlight ? " highlight" : ""}${!plan.available ? " plan-disabled" : ""}">
+          ${badge}
           <div class="plan-title">${plan.title}</div>
-          <div class="plan-price">${fmt.format(plan.priceTomans)} تومان</div>
+          <div class="plan-subtitle muted">${plan.subtitle}</div>
           <div class="plan-desc muted">${plan.description}</div>
-          <div class="plan-duration muted">مدت: ${plan.months} ماه</div>
-          <button class="plan-buy" data-tier="${plan.tier}">پرداخت با زرین‌پال</button>
+          ${tagsBlock}
+          <ul class="plan-features">${featureItems}</ul>
+          <div class="plan-limits muted">${limitsText}</div>
+          ${durations}
         </div>
-      `).join("");
+        `;
+      }).join("");
+      const activePlan = getPlanDefinition(me?.planTier ?? null);
       const planMeta = {
         planTier: me?.planTier ?? "free",
         planExpiresAt: me?.planExpiresAt ?? null,
+        dailyLimits: activePlan?.dailyLimits ?? null,
+        featureFlags: activePlan?.featureFlags ?? null,
       };
 
       const body = `
@@ -268,13 +295,35 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         .bar{width:6px;background:#888}
         .muted{color:#666}
         .hide{display:none}
-        .plan-grid{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
-        .plan-card{flex:1 1 240px;border:1px solid #ddd;border-radius:12px;padding:16px;background:#fff;display:flex;flex-direction:column;gap:8px;box-shadow:0 1px 2px rgba(0,0,0,0.05)}
-        .plan-card.highlight{border-color:#2d7a46;background:#f3fff6}
-        .plan-label{font-size:14px;color:#2d7a46;font-weight:600}
-        .plan-title{font-size:18px;font-weight:700}
-        .plan-price{font-size:22px;font-weight:700}
-        .plan-card button{margin-top:auto}
+        .plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:12px}
+        .plan-card{position:relative;border:1px solid #e1e1e1;border-radius:16px;padding:20px;background:#fff;display:flex;flex-direction:column;gap:10px;box-shadow:0 8px 18px rgba(0,0,0,0.05);transition:transform .15s ease, box-shadow .15s ease}
+        .plan-card:hover{transform:translateY(-4px);box-shadow:0 12px 24px rgba(0,0,0,0.08)}
+        .plan-card.highlight{border-color:#2d7a46;box-shadow:0 14px 28px rgba(45,122,70,0.18)}
+        .plan-card.plan-disabled{border-style:dashed;background:#fafafa;box-shadow:none;transform:none}
+        .plan-badge{position:absolute;top:16px;left:16px;background:#2d7a46;color:#fff;padding:4px 12px;border-radius:999px;font-size:12px;font-weight:600}
+        .plan-title{font-size:20px;font-weight:700}
+        .plan-subtitle{font-size:14px}
+        .plan-desc{line-height:1.7}
+        .plan-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+        .plan-tags span{background:#eef6ff;color:#0b5ed7;font-size:12px;padding:4px 8px;border-radius:999px}
+        .plan-features{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+        .plan-features li{position:relative;padding-right:18px;font-size:14px;line-height:1.6}
+        .plan-features li::before{content:"•";position:absolute;right:4px;color:#2d7a46;font-size:18px;line-height:1}
+        .plan-limits{font-size:13px;line-height:1.6;margin-top:6px}
+        .plan-durations{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+        .plan-buy{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 16px;border-radius:12px;border:1px solid #2d7a46;background:#2d7a46;color:#fff;font-weight:600;cursor:pointer;transition:transform .15s ease, box-shadow .15s ease}
+        .plan-buy:hover{transform:translateY(-2px);box-shadow:0 8px 16px rgba(45,122,70,0.25)}
+        .plan-card.highlight .plan-buy{background:#1f5c34;border-color:#1f5c34}
+        .plan-buy-label{flex:1;text-align:right}
+        .plan-buy-price{font-size:16px}
+        .plan-save{background:#fff;color:#1f5c34;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600}
+        .plan-coming-soon{margin-top:16px;padding:14px;border-radius:12px;background:#f1f1f1;text-align:center;font-weight:600;color:#444}
+        #plan-status{margin-top:16px}
+        #plan-status .plan-meta-limits{margin-top:6px;font-size:13px;color:#444}
+        #plan-status .plan-meta-tags{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px}
+        #plan-status .plan-meta-tags span{background:#eef6ff;color:#0b5ed7;padding:4px 8px;border-radius:999px;font-size:12px}
+        #plan-status-msg{font-size:13px;margin-top:4px}
+        #plan-status-msg.error{color:#b3261e;font-weight:600}
       </style>
 
       <script id="plan-catalog" type="application/json">${JSON.stringify(planCatalog)}</script>
@@ -445,7 +494,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         <div class="plan-grid">
           ${planCards}
         </div>
-        <div id="plan-status" class="muted" style="margin-top:10px"></div>
+        <div id="plan-status" class="muted"></div>
+        <div id="plan-status-msg" class="muted"></div>
       </div>
 
       <script>
@@ -459,6 +509,9 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         if (planMetaEl) planMetaEl.remove();
         const planByTier = {};
         for (const p of planCatalog) planByTier[p.tier] = p;
+        const flagLabelMap = ${JSON.stringify(featureFlagLabels)};
+        const priceFmt = new Intl.NumberFormat('fa-IR');
+        window.PSX_PLANS = { catalog: planCatalog, meta: planMeta };
 
         // تب‌ها
         const tabs = document.querySelectorAll('.tabbar button');
@@ -1020,58 +1073,101 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           document.getElementById("x-show-review").scrollIntoView({ behavior: "smooth", block: "center" });
         }
 
-        function initPlans() {
+        function renderPlanStatus() {
           const statusEl = document.getElementById('plan-status');
-          if (statusEl) {
-            if (!planMeta || planMeta.planTier === 'free') {
-              statusEl.textContent = 'پلن فعلی: رایگان. برای دسترسی کامل یکی از پلن‌ها را فعال کن.';
-            } else {
-              const info = planByTier[planMeta.planTier] || null;
-              let text = 'پلن فعلی: ' + (info ? info.title : planMeta.planTier);
-              if (planMeta.planExpiresAt) {
-                try {
-                  const fa = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'long' }).format(new Date(planMeta.planExpiresAt));
-                  text += ' — اعتبار تا ' + fa;
-                } catch {
-                  text += ' — اعتبار تا ' + new Date(planMeta.planExpiresAt).toLocaleDateString('fa-IR');
-                }
-              }
-              statusEl.textContent = text;
+          const msgEl = document.getElementById('plan-status-msg');
+          if (msgEl) { msgEl.textContent = ''; msgEl.classList.remove('error'); }
+          if (!statusEl) return;
+          const tier = planMeta && planMeta.planTier ? planMeta.planTier : 'free';
+          if (!planMeta || tier === 'free') {
+            statusEl.classList.add('muted');
+            statusEl.innerHTML = 'پلن فعلی: رایگان. برای دسترسی کامل یکی از پلن‌ها را فعال کن.';
+            return;
+          }
+          const info = planByTier[tier] || null;
+          let baseText = 'پلن فعلی: ' + (info ? info.title : tier);
+          if (planMeta.planExpiresAt) {
+            try {
+              const fa = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'long' }).format(new Date(planMeta.planExpiresAt));
+              baseText += ' — اعتبار تا ' + fa;
+            } catch (err) {
+              baseText += ' — اعتبار تا ' + new Date(planMeta.planExpiresAt).toLocaleDateString('fa-IR');
             }
           }
+          const blocks = ['<div>' + baseText + '</div>'];
+          if (planMeta.dailyLimits) {
+            const dl = planMeta.dailyLimits;
+            blocks.push(
+              '<div class="plan-meta-limits">سقف روزانه: ' +
+              priceFmt.format(dl.randomQuestionsPerDay) +
+              ' سؤال تصادفی • ' +
+              priceFmt.format(dl.challengeQuestionsPerDay) +
+              ' سؤال چالشی • ' +
+              priceFmt.format(dl.examsPerDay) +
+              ' آزمون • ' +
+              priceFmt.format(dl.qaSessionsPerDay) +
+              ' مرور تشریحی</div>'
+            );
+          }
+          if (planMeta.featureFlags) {
+            const activeFlags = Object.entries(planMeta.featureFlags)
+              .filter(([, enabled]) => !!enabled)
+              .map(([key]) => flagLabelMap[key] || '')
+              .filter(Boolean);
+            if (activeFlags.length) {
+              blocks.push(
+                '<div class="plan-meta-tags">' +
+                activeFlags.map(label => '<span>' + label + '</span>').join('') +
+                '</div>'
+              );
+            }
+          }
+          statusEl.classList.remove('muted');
+          statusEl.innerHTML = blocks.join('');
+        }
 
+        function initPlans() {
+          renderPlanStatus();
+          const statusMsgEl = document.getElementById('plan-status-msg');
           document.querySelectorAll('.plan-buy').forEach(btn => {
             btn.addEventListener('click', async () => {
               const tier = btn.dataset.tier;
               const info = tier ? planByTier[tier] : null;
-              if (!tier || !info) {
+              const months = Number(btn.dataset.months || '0');
+              const price = Number(btn.dataset.price || '0');
+              const label = btn.dataset.label || '';
+              if (!tier || !info || !months) {
                 alert('پلن انتخابی معتبر نیست.');
                 return;
               }
-              const confirmMsg = 'آیا می‌خواهی پرداخت پلن «' + info.title + '» آغاز شود؟';
+              const confirmMsg = 'آیا می‌خواهی پرداخت پلن «' + info.title + '» (' + label + ') به مبلغ ' + priceFmt.format(price) + ' تومان آغاز شود؟';
               if (!confirm(confirmMsg)) return;
               btn.disabled = true;
-              const original = btn.textContent;
-              btn.textContent = 'در حال ایجاد لینک...';
-              if (statusEl) statusEl.textContent = 'در حال ارتباط با زرین‌پال...';
+              const originalHtml = btn.innerHTML;
+              btn.innerHTML = '<span>در حال ایجاد لینک...</span>';
+              if (statusMsgEl) { statusMsgEl.classList.remove('error'); statusMsgEl.textContent = 'در حال ارتباط با زرین‌پال...'; }
               try {
                 const res = await fetch('/api/billing/zarinpal/create', {
                   method: 'POST',
                   headers: { 'content-type': 'application/json' },
-                  body: JSON.stringify({ planTier: tier })
+                  body: JSON.stringify({ planTier: tier, months })
                 });
                 const data = await res.json();
                 if (!data.ok || !data.payUrl) {
                   const msg = data.error || 'خطا در ایجاد تراکنش';
                   throw new Error(msg);
                 }
-                if (statusEl) statusEl.textContent = 'در حال انتقال به درگاه امن زرین‌پال...';
                 location.href = data.payUrl;
               } catch (err) {
                 btn.disabled = false;
-                btn.textContent = original;
-                const msg = err?.message || String(err) || 'خطا رخ داد';
-                if (statusEl) statusEl.textContent = 'خطا: ' + msg;
+                btn.innerHTML = originalHtml;
+                const msg = err && err.message ? err.message : String(err) || 'خطا رخ داد';
+                if (statusMsgEl) {
+                  statusMsgEl.classList.add('error');
+                  statusMsgEl.textContent = 'خطا: ' + msg;
+                } else {
+                  alert(msg);
+                }
               }
             });
           });
