@@ -16,6 +16,25 @@ export type PlanDailyLimits = {
   qaSessionsPerDay: number;
 };
 
+export type PlanUsageLimits = {
+  randomFetches: Record<"konkur" | "talifi" | "qa", number | null>;
+  challengeFetches: {
+    enabled: boolean;
+    perType: Record<"konkur" | "talifi", number | null>;
+  };
+  exams: {
+    totalPerDay: number | null;
+    byMode: {
+      konkur?: number | null;
+      mixed?: number | null;
+      talifi?: { perDay: number | null; maxQuestions?: number | null } | null;
+    };
+  };
+  talifiAuthoredPerDay: number | null;
+  qaPostsPerDay: number | null;
+  statsAccess: boolean;
+};
+
 export type PlanFeatureFlags = {
   qaBank: boolean;
   challengeHub: boolean;
@@ -26,6 +45,48 @@ export type PlanFeatureFlags = {
 };
 
 export const PLAN_CATALOG = {
+  free: {
+    title: "پلن رایگان",
+    subtitle: "دسترسی اولیه با سقف محدود برای آشنایی با سامانه",
+    description: "می‌توانی با بانک سؤال کنکور تمرین کنی و روزانه چند سؤال تالیفی و یک آزمون تالیفی کوتاه بسازی.",
+    highlight: false,
+    available: false,
+    features: [
+      "گرفتن سؤال‌های کنکور بدون محدودیت",
+      "تا ۵ سؤال تالیفی تصادفی در روز",
+      "یک آزمون تالیفی کوتاه با حداکثر ۱۵ سؤال در روز",
+    ],
+    dailyLimits: {
+      randomQuestionsPerDay: 40,
+      challengeQuestionsPerDay: 0,
+      examsPerDay: 2,
+      qaSessionsPerDay: 5,
+    } as PlanDailyLimits,
+    usageLimits: {
+      randomFetches: { konkur: null, talifi: 5, qa: null },
+      challengeFetches: { enabled: false, perType: { konkur: 0, talifi: 0 } },
+      exams: {
+        totalPerDay: null,
+        byMode: {
+          konkur: null,
+          mixed: null,
+          talifi: { perDay: 1, maxQuestions: 15 },
+        },
+      },
+      talifiAuthoredPerDay: 0,
+      qaPostsPerDay: 0,
+      statsAccess: false,
+    } as PlanUsageLimits,
+    featureFlags: {
+      qaBank: false,
+      challengeHub: false,
+      examBuilder: true,
+      analytics: false,
+      prioritySupport: false,
+      aiCoach: false,
+    } as PlanFeatureFlags,
+    durations: [] as PlanDuration[],
+  },
   level1: {
     title: "سطح ۱ — شروع هوشمند",
     subtitle: "برای ساختن عادت مطالعه منظم و پوشش کامل مباحث پایه",
@@ -44,6 +105,21 @@ export const PLAN_CATALOG = {
       examsPerDay: 3,
       qaSessionsPerDay: 20,
     } as PlanDailyLimits,
+    usageLimits: {
+      randomFetches: { konkur: null, talifi: null, qa: null },
+      challengeFetches: { enabled: true, perType: { konkur: null, talifi: null } },
+      exams: {
+        totalPerDay: 3,
+        byMode: {
+          konkur: null,
+          mixed: null,
+          talifi: { perDay: 3, maxQuestions: null },
+        },
+      },
+      talifiAuthoredPerDay: 50,
+      qaPostsPerDay: 20,
+      statsAccess: false,
+    } as PlanUsageLimits,
     featureFlags: {
       qaBank: true,
       challengeHub: true,
@@ -76,6 +152,21 @@ export const PLAN_CATALOG = {
       examsPerDay: 6,
       qaSessionsPerDay: 60,
     } as PlanDailyLimits,
+    usageLimits: {
+      randomFetches: { konkur: null, talifi: null, qa: null },
+      challengeFetches: { enabled: true, perType: { konkur: null, talifi: null } },
+      exams: {
+        totalPerDay: 10,
+        byMode: {
+          konkur: null,
+          mixed: null,
+          talifi: { perDay: 10, maxQuestions: null },
+        },
+      },
+      talifiAuthoredPerDay: 200,
+      qaPostsPerDay: 50,
+      statsAccess: true,
+    } as PlanUsageLimits,
     featureFlags: {
       qaBank: true,
       challengeHub: true,
@@ -108,6 +199,21 @@ export const PLAN_CATALOG = {
       examsPerDay: 12,
       qaSessionsPerDay: 120,
     } as PlanDailyLimits,
+    usageLimits: {
+      randomFetches: { konkur: null, talifi: null, qa: null },
+      challengeFetches: { enabled: true, perType: { konkur: null, talifi: null } },
+      exams: {
+        totalPerDay: 20,
+        byMode: {
+          konkur: null,
+          mixed: null,
+          talifi: { perDay: 20, maxQuestions: null },
+        },
+      },
+      talifiAuthoredPerDay: 400,
+      qaPostsPerDay: 120,
+      statsAccess: true,
+    } as PlanUsageLimits,
     featureFlags: {
       qaBank: true,
       challengeHub: true,
