@@ -1,12 +1,48 @@
 // src/routes/student.ts
 import { html, json, page } from "../lib/http";
-import { getSessionUser } from "../lib/auth";
-import { PLAN_CATALOG, getPlanDefinition } from "../lib/billing";
+import { requireRole, type SessionPayload } from "../lib/auth";
+import { PLAN_CATALOG, getPlanDefinition, type PlanDefinition, type PlanTier } from "../lib/billing";
 import {
   queryRandomQuestion, getQuestion, recordAnswer, upsertRating,
   chooseChallengeQuestion, listAnswersByClient, aggregateStatsFromLogs,
   createExamDraft, gradeExam, getExamReview, listQuestions
 } from "../lib/dataStore";
+import { consumeUsage, describeUsageForPlan, getUsageSnapshots } from "../lib/usage";
+
+type StudentContext = {
+  session: SessionPayload;
+  plan: PlanDefinition & { tier: PlanTier };
+};
+
+function resolvePlanDefinition(tier: string | null | undefined): (PlanDefinition & { tier: PlanTier }) {
+  const plan = getPlanDefinition(tier);
+  if (plan) return plan;
+  const fallback = getPlanDefinition("free");
+  if (!fallback) {
+    throw new Error("missing free plan definition");
+  }
+  return fallback;
+}
+
+async function requireStudentContext(req: Request, env: any, opts?: { respondJson?: boolean }): Promise<StudentContext | Response> {
+  const res = await requireRole(req, env, "student");
+  if (res instanceof Response) {
+    if (opts?.respondJson) {
+      return json({ ok: false, error: "auth_required" }, 401);
+    }
+    return res;
+  }
+  const plan = resolvePlanDefinition(res.planTier);
+  return { session: res, plan };
+}
+
+function quotaError(message: string, extra: { remaining?: number | null; limit?: number | null } = {}, status = 429) {
+  return json({ ok: false, error: "quota_exceeded", message, ...extra }, status);
+}
+
+function featureLocked(message: string, status = 403) {
+  return json({ ok: false, error: "feature_locked", message }, status);
+}
 
 export function routeStudent(req: Request, url: URL, env?: any): Response | null {
   const p = url.pathname;
@@ -14,6 +50,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   // --- API: سؤال تصادفی ---
   if (p === "/api/student/random" && req.method === "GET") {
     return (async () => {
+      const ctx = await requireStudentContext(req, env, { respondJson: true });
+      if (ctx instanceof Response) return ctx;
       const type = ((url.searchParams.get("type") || "konkur") as "konkur"|"talifi"|"qa");
       const majorId = url.searchParams.get("majorId");
       if (!majorId) return json({ ok: false, error: "majorId required" }, 400);
@@ -29,6 +67,19 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       };
 
       if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+      const usageLimit = ctx.plan.usageLimits?.randomFetches?.[type] ?? null;
+      let quotaRecord = null as null | { action: string; remaining: number | null; limit: number | null };
+      if (usageLimit !== null && usageLimit !== undefined) {
+        const usage = await consumeUsage(env, ctx.session.email, [{ action: `random:${type}`, limit: usageLimit }]);
+        if (!usage.ok) {
+          const msg = type === "talifi"
+            ? "سقف درخواست سؤال تالیفی برای امروز تمام شده است."
+            : "سقف استفاده روزانه این بخش تمام شده است.";
+          return quotaError(msg, { quota: { action: `random:${type}`, remaining: usage.remaining, limit: usage.limit } });
+        }
+        const rec = usage.records.find(r => r.action === `random:${type}`) || null;
+        if (rec) quotaRecord = { action: `random:${type}`, remaining: rec.remaining, limit: rec.limit };
+      }
       const q = await queryRandomQuestion(env, type, filters);
       if (!q) return json({ ok: false, error: "no_question" }, 404);
 
@@ -39,7 +90,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         options: (q.options || []).map(o => ({ label: o.label, text: o.text })),
         expl: (!q.options || q.options.length === 0) ? (q.expl || null) : null
       };
-      return json({ ok: true, data: safe });
+      return json({ ok: true, data: safe, quota: quotaRecord });
     })();
   }
 
@@ -47,6 +98,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   if (p === "/api/student/answer" && req.method === "POST") {
     return (async () => {
       try {
+        const ctx = await requireStudentContext(req, env, { respondJson: true });
+        if (ctx instanceof Response) return ctx;
         const body = await req.json();
         const id = body?.id as string;
         const type = body?.type as "konkur"|"talifi"|"qa";
@@ -82,6 +135,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   // --- API: سؤال چالشی بعدی ---
   if (p === "/api/student/challenge-next" && req.method === "GET") {
     return (async () => {
+      const ctx = await requireStudentContext(req, env, { respondJson: true });
+      if (ctx instanceof Response) return ctx;
       const clientId = url.searchParams.get("clientId") || "";
       const type = (url.searchParams.get("type") as "konkur"|"talifi") || null;
       const filters = {
@@ -96,9 +151,24 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       if (!clientId) return json({ ok: false, error: "clientId required" }, 400);
       if (!filters.majorId) return json({ ok: false, error: "majorId required" }, 400);
       if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+      const challengeCfg = ctx.plan.usageLimits?.challengeFetches;
+      if (!challengeCfg?.enabled) {
+        return featureLocked("این بخش در پلن فعلی فعال نیست.");
+      }
 
       const q = await chooseChallengeQuestion(env, clientId, filters, type);
       if (!q) return json({ ok: false, error: "no_challenge" }, 404);
+      const resolvedType: "konkur" | "talifi" = q.type === "talifi" ? "talifi" : "konkur";
+      let quotaRecord = null as null | { action: string; remaining: number | null; limit: number | null };
+      const limit = challengeCfg.perType?.[resolvedType] ?? null;
+      if (limit !== null && limit !== undefined) {
+        const usage = await consumeUsage(env, ctx.session.email, [{ action: `challenge:${resolvedType}`, limit }]);
+        if (!usage.ok) {
+          return quotaError("سقف سؤال‌های چالشی امروز تمام شده است.", { quota: { action: `challenge:${resolvedType}`, remaining: usage.remaining, limit: usage.limit } });
+        }
+        const rec = usage.records.find(r => r.action === `challenge:${resolvedType}`) || null;
+        if (rec) quotaRecord = { action: `challenge:${resolvedType}`, remaining: rec.remaining, limit: rec.limit };
+      }
 
       const safe = {
         id: q.id,
@@ -107,14 +177,19 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         options: (q.options || []).map(o => ({ label: o.label, text: o.text })),
         expl: (!q.options || q.options.length === 0) ? (q.expl || null) : null
       };
-      return json({ ok: true, data: safe });
+      return json({ ok: true, data: safe, quota: quotaRecord });
     })();
   }
 
   // --- API: لیست/جستجوی پرسش‌های تشریحی ---
   if (p === "/api/student/qa/list" && req.method === "GET") {
     return (async () => {
+      const ctx = await requireStudentContext(req, env, { respondJson: true });
+      if (ctx instanceof Response) return ctx;
       if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+      if (!ctx.plan.featureFlags.qaBank) {
+        return featureLocked("دسترسی به بانک تشریحی در پلن فعلی غیرفعال است.");
+      }
       const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") || 20)));
       const majorId = url.searchParams.get("majorId");
       const courseId = url.searchParams.get("courseId");
@@ -149,10 +224,15 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   // --- API: آمار ---
   if (p === "/api/student/stats" && req.method === "GET") {
     return (async () => {
+      const ctx = await requireStudentContext(req, env, { respondJson: true });
+      if (ctx instanceof Response) return ctx;
       const clientId = url.searchParams.get("clientId") || "";
       const window = url.searchParams.get("window") || "7d"; // 24h,3d,7d,1m,3m,6m,all
       if (!clientId) return json({ ok: false, error: "clientId required" }, 400);
       if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+      if (!ctx.plan.usageLimits?.statsAccess) {
+        return featureLocked("آمار عملکرد در پلن فعلی فعال نیست.");
+      }
       const logs = await listAnswersByClient(env, clientId, 1000);
       const stats = aggregateStatsFromLogs(logs, window);
       return json({ ok: true, data: stats });
@@ -163,6 +243,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   if (p === "/api/student/exam/start" && req.method === "POST") {
     return (async () => {
       try {
+        const ctx = await requireStudentContext(req, env, { respondJson: true });
+        if (ctx instanceof Response) return ctx;
         const body = await req.json();
         const clientId = String(body?.clientId || "");
         const mode = (String(body?.mode || "konkur") as "konkur"|"mixed"|"talifi");
@@ -180,6 +262,42 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         }
         if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
 
+        const usageCfg = ctx.plan.usageLimits?.exams;
+        const increments: { action: string; limit: number | null | undefined }[] = [];
+        if (usageCfg?.totalPerDay !== null && usageCfg?.totalPerDay !== undefined) {
+          increments.push({ action: "exam:total", limit: usageCfg.totalPerDay });
+        }
+        if (mode === "konkur" && usageCfg?.byMode?.konkur !== null && usageCfg?.byMode?.konkur !== undefined) {
+          increments.push({ action: "exam:konkur", limit: usageCfg.byMode.konkur });
+        }
+        if (mode === "mixed" && usageCfg?.byMode?.mixed !== null && usageCfg?.byMode?.mixed !== undefined) {
+          increments.push({ action: "exam:mixed", limit: usageCfg.byMode.mixed });
+        }
+        if (mode === "talifi") {
+          const talifiCfg = usageCfg?.byMode?.talifi;
+          if (talifiCfg?.maxQuestions !== null && talifiCfg?.maxQuestions !== undefined && count > talifiCfg.maxQuestions) {
+            return quotaError(`حداکثر ${talifiCfg.maxQuestions} سؤال برای هر آزمون تالیفی در پلن فعلی مجاز است.`, { limit: talifiCfg.maxQuestions }, 400);
+          }
+          if (talifiCfg?.perDay !== null && talifiCfg?.perDay !== undefined) {
+            increments.push({ action: "exam:talifi", limit: talifiCfg.perDay });
+          }
+        }
+
+        let quotaMeta: Record<string, { remaining: number | null; limit: number | null }> | null = null;
+        if (increments.length) {
+          const usage = await consumeUsage(env, ctx.session.email, increments);
+          if (!usage.ok) {
+            const msg = usage.action === "exam:talifi"
+              ? "سقف آزمون‌های تالیفی امروز به پایان رسیده است."
+              : "سقف تعداد آزمون‌های امروز پر شده است.";
+            return quotaError(msg, { quota: { action: usage.action, remaining: usage.remaining, limit: usage.limit } });
+          }
+          quotaMeta = usage.records.reduce((acc, rec) => {
+            acc[rec.action] = { remaining: rec.remaining, limit: rec.limit };
+            return acc;
+          }, {} as Record<string, { remaining: number | null; limit: number | null }>);
+        }
+
         const { id, questions, durationSec } = await createExamDraft(
           env,
           clientId,
@@ -188,7 +306,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           count,
           durationMin * 60
         );
-        return json({ ok: true, examId: id, questions, durationSec });
+        return json({ ok: true, examId: id, questions, durationSec, quota: quotaMeta });
       } catch (e: any) {
         const msg = String(e?.message || e);
         return json({ ok: false, error: msg }, msg === "no_questions" ? 404 : 500);
@@ -200,6 +318,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   if (p === "/api/student/exam/submit" && req.method === "POST") {
     return (async () => {
       try {
+        const ctx = await requireStudentContext(req, env, { respondJson: true });
+        if (ctx instanceof Response) return ctx;
         const body = await req.json();
         const clientId = String(body?.clientId || "");
         const examId = String(body?.examId || "");
@@ -217,6 +337,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   // --- API: پاسخنامه آزمون ---
   if (p === "/api/student/exam/review" && req.method === "GET") {
     return (async () => {
+      const ctx = await requireStudentContext(req, env, { respondJson: true });
+      if (ctx instanceof Response) return ctx;
       const clientId = url.searchParams.get("clientId") || "";
       const examId = url.searchParams.get("examId") || "";
       if (!clientId || !examId) return json({ ok: false, error: "bad_request" }, 400);
@@ -233,7 +355,10 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
   // --- صفحه دانشجو (۵ تب + پاسخنامه) ---
   if (p === "/student") {
     return (async () => {
-      const me = env ? await getSessionUser(req, env) : null;
+      if (!env) return page(html`<h1>Service configuration error</h1>`);
+      const ctx = await requireStudentContext(req, env);
+      if (ctx instanceof Response) return ctx;
+      const me = ctx.session;
       const planCatalog = Object.entries(PLAN_CATALOG).map(([tier, plan]) => ({
         tier,
         ...plan,
@@ -247,7 +372,22 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         aiCoach: "دستیار هوشمند",
       } as const;
       const fmt = new Intl.NumberFormat("fa-IR");
-      const planCards = planCatalog.map(plan => {
+      const usageDescriptors = describeUsageForPlan(ctx.plan);
+      let usageSummary: { action: string; label: string; remaining: number | null; limit: number | null }[] = [];
+      if (env.DATA && usageDescriptors.length) {
+        const snapshots = await getUsageSnapshots(env, me.email, usageDescriptors.map(d => ({ action: d.action, limit: d.limit })));
+        usageSummary = usageDescriptors.map((desc, idx) => {
+          const snap = snapshots[idx];
+          const limit = snap?.limit ?? (desc.limit ?? null);
+          return {
+            action: desc.action,
+            label: desc.label,
+            limit,
+            remaining: snap?.remaining ?? (typeof limit === "number" ? Math.max(0, limit) : null),
+          };
+        }).filter(it => it.limit !== null && it.limit !== undefined);
+      }
+      const planCards = planCatalog.filter(plan => plan.tier !== "free").map(plan => {
         const featureItems = plan.features.map(f => `<li>${f}</li>`).join("");
         const tags = Object.entries(plan.featureFlags)
           .filter(([, enabled]) => !!enabled)
@@ -278,12 +418,13 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         </div>
         `;
       }).join("");
-      const activePlan = getPlanDefinition(me?.planTier ?? null);
       const planMeta = {
-        planTier: me?.planTier ?? "free",
+        planTier: me.planTier ?? "free",
         planExpiresAt: me?.planExpiresAt ?? null,
-        dailyLimits: activePlan?.dailyLimits ?? null,
-        featureFlags: activePlan?.featureFlags ?? null,
+        dailyLimits: ctx.plan.dailyLimits ?? null,
+        featureFlags: ctx.plan.featureFlags ?? null,
+        usage: usageSummary,
+        talifiExamMaxQuestions: ctx.plan.usageLimits?.exams.byMode.talifi?.maxQuestions ?? null,
       };
 
       const body = `
@@ -322,6 +463,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         #plan-status .plan-meta-limits{margin-top:6px;font-size:13px;color:#444}
         #plan-status .plan-meta-tags{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px}
         #plan-status .plan-meta-tags span{background:#eef6ff;color:#0b5ed7;padding:4px 8px;border-radius:999px;font-size:12px}
+        #plan-status .plan-meta-usage{margin-top:6px;font-size:13px;color:#0b5ed7;display:flex;flex-direction:column;gap:2px}
+        #plan-status .plan-meta-usage span strong{font-weight:600}
         #plan-status-msg{font-size:13px;margin-top:4px}
         #plan-status-msg.error{color:#b3261e;font-weight:600}
       </style>
@@ -513,6 +656,34 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         const priceFmt = new Intl.NumberFormat('fa-IR');
         window.PSX_PLANS = { catalog: planCatalog, meta: planMeta };
 
+        function applyQuotaUpdate(quota) {
+          if (!planMeta || !quota) return;
+          if (!Array.isArray(planMeta.usage)) planMeta.usage = [];
+          const list = planMeta.usage;
+          const updateSingle = (action, info) => {
+            if (!action || !info) return;
+            const item = list.find(it => it.action === action);
+            if (item) {
+              if (info.limit !== undefined) item.limit = info.limit;
+              if (info.remaining !== undefined) item.remaining = info.remaining;
+            }
+          };
+          if (Array.isArray(quota)) {
+            quota.forEach(entry => {
+              if (entry && entry.action) updateSingle(entry.action, entry);
+            });
+          } else if (quota.action) {
+            updateSingle(quota.action, quota);
+          } else if (typeof quota === 'object') {
+            for (const key in quota) {
+              if (Object.prototype.hasOwnProperty.call(quota, key)) {
+                updateSingle(key, quota[key]);
+              }
+            }
+          }
+          renderPlanStatus();
+        }
+
         // تب‌ها
         const tabs = document.querySelectorAll('.tabbar button');
         function showTab(id){
@@ -611,15 +782,24 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             sourceId: $("#source").value,
             chapterId: $("#chapter").value
           });
-          for (let tries=0; tries<5; tries++) {
-            const r = await fetch("/api/student/random?"+params.toString());
-            const d = await r.json();
-            if (!d.ok) { $("#qbox").style.display="none"; alert("سؤالی با این فیلتر پیدا نشد."); return; }
-            const q = d.data;
-            if (seenHas(q.id) && tries < 4) continue;
-            renderSingle(q); return;
+          const r = await fetch("/api/student/random?"+params.toString());
+          const d = await r.json();
+          if (d.quota) applyQuotaUpdate(d.quota);
+          if (!d.ok) {
+            if (d.error === 'no_question') {
+              $("#qbox").style.display="none";
+              alert("سؤالی با این فیلتر پیدا نشد.");
+            } else {
+              alert(d.message || d.error || "خطا در دریافت سؤال");
+            }
+            return;
           }
-          alert("سؤال تازه‌ای پیدا نشد. فیلتر را عوض کن.");
+          const q = d.data;
+          const wasSeen = seenHas(q.id);
+          renderSingle(q);
+          if (wasSeen) {
+            $("#result").textContent = "این سؤال را قبلاً دیده‌ای. برای تمرین دوباره پاسخ بده.";
+          }
         }
 
         function renderSingle(q) {
@@ -691,7 +871,12 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           });
           const r = await fetch("/api/student/challenge-next?"+params.toString());
           const d = await r.json();
-          if (!d.ok) { $("#cbox").style.display="none"; alert("سؤال چالشی پیدا نشد."); return; }
+          if (d.quota) applyQuotaUpdate(d.quota);
+          if (!d.ok) {
+            $("#cbox").style.display="none";
+            alert(d.message || d.error || "سؤال چالشی پیدا نشد.");
+            return;
+          }
           renderChallenge(d.data);
         }
 
@@ -858,7 +1043,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           if (courseId) params.set("courseId", courseId);
           const res = await fetch("/api/student/random?"+params.toString());
           const d = await res.json();
-          if (!d.ok) { alert("پرسش تشریحی پیدا نشد."); return; }
+          if (d.quota) applyQuotaUpdate(d.quota);
+          if (!d.ok) { alert(d.message || d.error || "پرسش تشریحی پیدا نشد."); return; }
           renderQaList([d.data]);
         }
 
@@ -905,7 +1091,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           const win = $("#win").value;
           const res = await fetch("/api/student/stats?clientId="+encodeURIComponent(clientId)+"&window="+encodeURIComponent(win));
           const d = await res.json();
-          if (!d.ok) { $("#sout").textContent = "خطا در دریافت آمار"; return; }
+          if (!d.ok) { $("#sout").textContent = d.message || d.error || "خطا در دریافت آمار"; return; }
           const s = d.data;
           $("#sout").innerHTML = [
             "کل پاسخ‌ها: "+s.total,
@@ -993,12 +1179,18 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           const durationMin = Number($("#x-min").value || 10);
           if (!majorId) { alert("رشته را انتخاب کن."); return; }
           if ((mode==="konkur" || mode==="mixed") && !courseId) { alert("برای کنکور/ترکیبی باید درس را انتخاب کنی."); return; }
+          const talifiCap = planMeta && typeof planMeta.talifiExamMaxQuestions === 'number' ? planMeta.talifiExamMaxQuestions : null;
+          if (mode === 'talifi' && talifiCap && count > talifiCap) {
+            alert('در پلن فعلی حداکثر ' + talifiCap + ' سؤال تالیفی در هر آزمون مجاز است.');
+            return;
+          }
           const res = await fetch("/api/student/exam/start", {
             method: "POST", headers: {"content-type":"application/json"},
             body: JSON.stringify({ clientId, mode, majorId, courseId, sourceId, chapterId, count, durationMin })
           });
           const d = await res.json();
-          if (!d.ok) { alert(d.error || "خطا در شروع آزمون"); return; }
+          if (d.quota) applyQuotaUpdate(d.quota);
+          if (!d.ok) { alert(d.message || d.error || "خطا در شروع آزمون"); return; }
           exam = { examId: d.examId, questions: d.questions, durationSec: d.durationSec, idx: 0, answers: {}, tLeft: d.durationSec, timer: null };
           renderExam();
           if (exam.timer) clearInterval(exam.timer);
@@ -1079,20 +1271,27 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           if (msgEl) { msgEl.textContent = ''; msgEl.classList.remove('error'); }
           if (!statusEl) return;
           const tier = planMeta && planMeta.planTier ? planMeta.planTier : 'free';
-          if (!planMeta || tier === 'free') {
+          if (!planMeta) {
             statusEl.classList.add('muted');
-            statusEl.innerHTML = 'پلن فعلی: رایگان. برای دسترسی کامل یکی از پلن‌ها را فعال کن.';
+            statusEl.innerHTML = 'برای مشاهده وضعیت پلن باید وارد حساب کاربری شوی.';
             return;
           }
           const info = planByTier[tier] || null;
-          let baseText = 'پلن فعلی: ' + (info ? info.title : tier);
-          if (planMeta.planExpiresAt) {
-            try {
-              const fa = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'long' }).format(new Date(planMeta.planExpiresAt));
-              baseText += ' — اعتبار تا ' + fa;
-            } catch (err) {
-              baseText += ' — اعتبار تا ' + new Date(planMeta.planExpiresAt).toLocaleDateString('fa-IR');
+          let baseText = '';
+          if (tier === 'free') {
+            baseText = 'پلن فعلی: رایگان. برای دسترسی کامل یکی از پلن‌ها را فعال کن.';
+            statusEl.classList.add('muted');
+          } else {
+            baseText = 'پلن فعلی: ' + (info ? info.title : tier);
+            if (planMeta.planExpiresAt) {
+              try {
+                const fa = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'long' }).format(new Date(planMeta.planExpiresAt));
+                baseText += ' — اعتبار تا ' + fa;
+              } catch (err) {
+                baseText += ' — اعتبار تا ' + new Date(planMeta.planExpiresAt).toLocaleDateString('fa-IR');
+              }
             }
+            statusEl.classList.remove('muted');
           }
           const blocks = ['<div>' + baseText + '</div>'];
           if (planMeta.dailyLimits) {
@@ -1109,6 +1308,20 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
               ' مرور تشریحی</div>'
             );
           }
+          const usageLines = [];
+          if (Array.isArray(planMeta.usage)) {
+            for (const item of planMeta.usage) {
+              const remain = typeof item.remaining === 'number' ? priceFmt.format(Math.max(0, item.remaining)) : 'نامحدود';
+              const limit = typeof item.limit === 'number' ? priceFmt.format(item.limit) : 'نامحدود';
+              usageLines.push('<span><strong>' + item.label + ':</strong> ' + remain + ' از ' + limit + ' باقی مانده</span>');
+            }
+          }
+          if (typeof planMeta.talifiExamMaxQuestions === 'number') {
+            usageLines.push('<span><strong>حداکثر سؤال تالیفی هر آزمون:</strong> ' + priceFmt.format(planMeta.talifiExamMaxQuestions) + '</span>');
+          }
+          if (usageLines.length) {
+            blocks.push('<div class="plan-meta-usage">' + usageLines.join('') + '</div>');
+          }
           if (planMeta.featureFlags) {
             const activeFlags = Object.entries(planMeta.featureFlags)
               .filter(([, enabled]) => !!enabled)
@@ -1122,7 +1335,6 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
               );
             }
           }
-          statusEl.classList.remove('muted');
           statusEl.innerHTML = blocks.join('');
         }
 
