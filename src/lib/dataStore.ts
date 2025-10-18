@@ -34,6 +34,53 @@ export async function getQuestion(env: any, type: QuestionType, id: string): Pro
   return raw ? JSON.parse(raw) : null;
 }
 
+// ویرایش
+export async function updateQuestion(
+  env: any,
+  type: QuestionType,
+  id: string,
+  updates: Partial<Pick<Question,
+    | "stem"
+    | "options"
+    | "correctLabel"
+    | "expl"
+    | "majorId"
+    | "degreeId"
+    | "ministryId"
+    | "examYearId"
+    | "courseId"
+    | "sourceId"
+    | "chapterId"
+  >>
+): Promise<Question | null> {
+  const existing = await getQuestion(env, type, id);
+  if (!existing) return null;
+
+  const allowedKeys: Array<keyof Question> = [
+    "stem",
+    "options",
+    "correctLabel",
+    "expl",
+    "majorId",
+    "degreeId",
+    "ministryId",
+    "examYearId",
+    "courseId",
+    "sourceId",
+    "chapterId",
+  ];
+
+  const merged: Question = { ...existing };
+  for (const key of allowedKeys) {
+    if (key in updates) {
+      (merged as any)[key] = (updates as any)[key];
+    }
+  }
+
+  await env.DATA.put(prefix(type) + id, JSON.stringify(merged));
+  return merged;
+}
+
 // لیست آخرین سوال‌ها
 export async function listQuestions(env: any, type: QuestionType, limit = 50): Promise<Question[]> {
   const keys = await env.DATA.list({ prefix: prefix(type) });

@@ -1,5 +1,5 @@
 import { html, json, page } from "../lib/http";
-import { createQuestion, listQuestions, deleteQuestion } from "../lib/dataStore";
+import { createQuestion, listQuestions, deleteQuestion, getQuestion, updateQuestion, type QuestionType, type Question } from "../lib/dataStore";
 
 export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
   const p = url.pathname;
@@ -7,35 +7,39 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
   // ایجاد آیتم برای هر سه نوع
   if (p === "/api/admin/create" && req.method === "POST") {
     return (async () => {
-      const type = (url.searchParams.get("type") || "konkur") as "konkur"|"talifi"|"qa";
+      const type = (url.searchParams.get("type") || "konkur") as QuestionType;
       const fd = await req.formData();
-
-      const base = {
-        type,
-        majorId: String(fd.get("majorId") || ""),
-        degreeId: fd.get("degreeId") ? String(fd.get("degreeId")) : undefined,
-        ministryId: fd.get("ministryId") ? String(fd.get("ministryId")) : undefined,
-        examYearId: fd.get("examYearId") ? String(fd.get("examYearId")) : undefined,
-        courseId: String(fd.get("courseId") || ""),
-        sourceId: fd.get("sourceId") ? String(fd.get("sourceId")) : undefined,
-        chapterId: fd.get("chapterId") ? String(fd.get("chapterId")) : undefined,
-        stem: String(fd.get("stem") || ""),
-        expl: fd.get("expl") ? String(fd.get("expl")) : undefined
-      } as any;
-
-      if (type !== "qa") {
-        base.options = [
-          { label: "A", text: String(fd.get("optA") || "") },
-          { label: "B", text: String(fd.get("optB") || "") },
-          { label: "C", text: String(fd.get("optC") || "") },
-          { label: "D", text: String(fd.get("optD") || "") }
-        ];
-        base.correctLabel = String(fd.get("correctLabel") || "A");
-      }
-
+      const payload = formToQuestionPayload(fd, type);
       if (!env || !env.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
-      const id = await createQuestion(env, base);
+      const id = await createQuestion(env, payload);
       return json({ ok: true, id, type });
+    })();
+  }
+
+  if (p === "/api/admin/question" && req.method === "GET") {
+    return (async () => {
+      const type = (url.searchParams.get("type") || "konkur") as QuestionType;
+      const id = String(url.searchParams.get("id") || "");
+      if (!id) return json({ ok: false, error: "id required" }, 400);
+      if (!env || !env.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+      const q = await getQuestion(env, type, id);
+      if (!q) return json({ ok: false, error: "not_found" }, 404);
+      return json({ ok: true, data: q });
+    })();
+  }
+
+  if (p === "/api/admin/question/update" && req.method === "POST") {
+    return (async () => {
+      const type = (url.searchParams.get("type") || "konkur") as QuestionType;
+      const fd = await req.formData();
+      const id = String(url.searchParams.get("id") || fd.get("id") || "");
+      if (!id) return json({ ok: false, error: "id required" }, 400);
+      if (!env || !env.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
+      const payload = formToQuestionPayload(fd, type);
+      const { type: _ignore, ...updates } = payload;
+      const updated = await updateQuestion(env, type, id, updates);
+      if (!updated) return json({ ok: false, error: "not_found" }, 404);
+      return json({ ok: true, data: updated });
     })();
   }
 
@@ -116,6 +120,38 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
             <thead><tr><th>شناسه</th><th>صورت سوال</th><th>نوع</th><th>عملیات</th></tr></thead>
             <tbody id="m-list"></tbody>
           </table>
+          <dialog id="edit-dialog">
+            <form id="edit-form">
+              <input type="hidden" name="id" id="edit-id">
+              <input type="hidden" name="type" id="edit-type">
+              <div><label>رشته</label> <select id="edit-major" name="majorId" required></select></div>
+              <div><label>مقطع</label> <select id="edit-degree" name="degreeId"></select></div>
+              <div><label>وزارتخانه</label> <select id="edit-ministry" name="ministryId"></select></div>
+              <div><label>سال کنکور</label> <select id="edit-examYear" name="examYearId"></select></div>
+              <div><label>درس</label> <select id="edit-course" name="courseId" required></select></div>
+              <div><label>منبع</label> <select id="edit-source" name="sourceId"></select></div>
+              <div><label>فصل</label> <select id="edit-chapter" name="chapterId"></select></div>
+              <div><label>صورت سوال</label><br><textarea id="edit-stem" name="stem" required rows="3" style="width:100%"></textarea></div>
+              <div id="edit-options">
+                <div><label>گزینه A</label><input id="edit-optA" name="optA" required style="width:100%"></div>
+                <div><label>گزینه B</label><input id="edit-optB" name="optB" required style="width:100%"></div>
+                <div><label>گزینه C</label><input id="edit-optC" name="optC" required style="width:100%"></div>
+                <div><label>گزینه D</label><input id="edit-optD" name="optD" required style="width:100%"></div>
+                <div>
+                  <label>گزینه صحیح</label>
+                  <select id="edit-correctLabel" name="correctLabel" required>
+                    <option value="A">A</option><option value="B">B</option>
+                    <option value="C">C</option><option value="D">D</option>
+                  </select>
+                </div>
+              </div>
+              <div><label>پاسخنامه تشریحی</label><br><textarea id="edit-expl" name="expl" rows="3" style="width:100%"></textarea></div>
+              <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px">
+                <button type="button" id="edit-cancel">انصراف</button>
+                <button type="submit">ذخیره</button>
+              </div>
+            </form>
+          </dialog>
         </div>
       </div>
 
@@ -132,7 +168,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         if (location.hash && document.getElementById(location.hash.slice(1))) showTab(location.hash.slice(1));
 
         // helpers
-        async function fillSelect(id, url, valueKey = "id", labelKey = "name") {
+        async function fillSelect(id, url, valueKey = "id", labelKey = "name", selectedValue) {
           const el = document.getElementById(id);
           el.innerHTML = "";
           const res = await fetch(url);
@@ -141,7 +177,14 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
             const opt = document.createElement("option");
             opt.value = it[valueKey];
             opt.textContent = it[labelKey];
+            if (typeof selectedValue !== "undefined" && String(opt.value) === String(selectedValue)) {
+              opt.selected = true;
+            }
             el.appendChild(opt);
+          }
+          if (typeof selectedValue !== "undefined" && el.options.length) {
+            const hasSelected = Array.from(el.options).some(o => o.selected);
+            if (!hasSelected) el.options[0].selected = true;
           }
         }
         async function initCascades(rootId) {
@@ -186,6 +229,103 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         initCascades("k"); wireForm("form-k", "echo-konkur");
         initCascades("t"); wireForm("form-t", "echo-talifi");
         initCascades("q"); wireForm("form-q", "echo-qa");
+        initCascades("edit");
+
+        const editDialog = document.getElementById("edit-dialog");
+        const editForm = document.getElementById("edit-form");
+        const editCancel = document.getElementById("edit-cancel");
+        const editOptions = document.getElementById("edit-options");
+
+        editCancel.addEventListener("click", () => {
+          if (typeof editDialog.close === "function") editDialog.close();
+          else editDialog.style.display = "none";
+        });
+
+        function toggleEditOptions(type) {
+          const isQA = type === "qa";
+          editOptions.style.display = isQA ? "none" : "block";
+          editOptions.querySelectorAll("input, select").forEach(el => {
+            if (el.tagName === "INPUT" || el.tagName === "SELECT") {
+              el.required = !isQA;
+            }
+          });
+        }
+
+        async function populateEditTaxonomy(q) {
+          await fillSelect("edit-major", "/api/taxonomy/majors", "id", "name", q.majorId);
+          await fillSelect("edit-degree", "/api/taxonomy/degrees", "id", "name", q.degreeId);
+          await fillSelect("edit-ministry", "/api/taxonomy/ministries", "id", "name", q.ministryId);
+          await fillSelect("edit-examYear", "/api/taxonomy/exam-years", "id", "name", q.examYearId);
+
+          const majorSel = document.getElementById("edit-major");
+          const courseUrl = "/api/taxonomy/courses?majorId=" + encodeURIComponent(majorSel.value || q.majorId || "");
+          await fillSelect("edit-course", courseUrl, "id", "name", q.courseId);
+
+          const courseSel = document.getElementById("edit-course");
+          const sourceUrl = "/api/taxonomy/sources?courseId=" + encodeURIComponent(courseSel.value || q.courseId || "");
+          await fillSelect("edit-source", sourceUrl, "id", "name", q.sourceId);
+
+          const sourceSel = document.getElementById("edit-source");
+          const chapterUrl = "/api/taxonomy/chapters?sourceId=" + encodeURIComponent(sourceSel.value || q.sourceId || "");
+          await fillSelect("edit-chapter", chapterUrl, "id", "name", q.chapterId);
+        }
+
+        async function openEdit(type, id) {
+          const res = await fetch(`/api/admin/question?type=${type}&id=${encodeURIComponent(id)}`);
+          const data = await res.json();
+          if (!data.ok) {
+            alert(data.error || "خطا در دریافت اطلاعات سوال");
+            return;
+          }
+          const q = data.data;
+          document.getElementById("edit-id").value = q.id;
+          document.getElementById("edit-type").value = q.type;
+          document.getElementById("edit-stem").value = q.stem || "";
+          document.getElementById("edit-expl").value = q.expl || "";
+
+          await populateEditTaxonomy(q);
+          toggleEditOptions(q.type);
+
+          if (q.options && q.options.length) {
+            const map = new Map(q.options.map(o => [o.label, o.text]));
+            document.getElementById("edit-optA").value = map.get("A") || "";
+            document.getElementById("edit-optB").value = map.get("B") || "";
+            document.getElementById("edit-optC").value = map.get("C") || "";
+            document.getElementById("edit-optD").value = map.get("D") || "";
+          } else {
+            document.getElementById("edit-optA").value = "";
+            document.getElementById("edit-optB").value = "";
+            document.getElementById("edit-optC").value = "";
+            document.getElementById("edit-optD").value = "";
+          }
+          document.getElementById("edit-correctLabel").value = q.correctLabel || "A";
+
+          if (typeof editDialog.showModal === "function") editDialog.showModal();
+          else editDialog.style.display = "block";
+        }
+
+        editForm.addEventListener("submit", async (ev) => {
+          ev.preventDefault();
+          const fd = new FormData(editForm);
+          const type = fd.get("type");
+          const id = fd.get("id");
+          if (!type || !id) {
+            alert("نوع یا شناسه موجود نیست");
+            return;
+          }
+          const res = await fetch(`/api/admin/question/update?type=${encodeURIComponent(type)}&id=${encodeURIComponent(id)}`, {
+            method: "POST",
+            body: fd,
+          });
+          const data = await res.json();
+          if (!data.ok) {
+            alert(data.error || "ویرایش انجام نشد");
+            return;
+          }
+          if (typeof editDialog.close === "function") editDialog.close();
+          else editDialog.style.display = "none";
+          document.getElementById("m-load").click();
+        });
 
         // مدیریت
         document.getElementById("m-load").onclick = async () => {
@@ -198,14 +338,24 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
           for (const it of data.data) {
             const tr = document.createElement("tr");
             tr.innerHTML = "<td>"+it.id+"</td><td>"+(it.stem?.slice(0,120) || "")+"</td><td>"+it.type+"</td><td></td>";
-            const btn = document.createElement("button");
-            btn.textContent = "حذف";
-            btn.onclick = async () => {
+            const actions = tr.lastChild;
+
+            const editBtn = document.createElement("button");
+            editBtn.type = "button";
+            editBtn.textContent = "ویرایش";
+            editBtn.style.marginInlineEnd = "6px";
+            editBtn.onclick = () => openEdit(it.type, it.id);
+            actions.appendChild(editBtn);
+
+            const delBtn = document.createElement("button");
+            delBtn.type = "button";
+            delBtn.textContent = "حذف";
+            delBtn.onclick = async () => {
               if (!confirm("حذف این آیتم؟")) return;
               await fetch("/api/admin/question/delete?type="+type+"&id="+encodeURIComponent(it.id), { method: "DELETE" });
               document.getElementById("m-load").click();
             };
-            tr.lastChild.appendChild(btn);
+            actions.appendChild(delBtn);
             tb.appendChild(tr);
           }
         };
@@ -215,6 +365,41 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
   }
 
   return null;
+}
+
+function optionalField(fd: FormData, key: string): string | undefined {
+  const val = fd.get(key);
+  if (val === null) return undefined;
+  const str = String(val);
+  return str ? str : undefined;
+}
+
+function formToQuestionPayload(fd: FormData, type: QuestionType): Omit<Question, "id"|"createdAt"> {
+  const payload: Omit<Question, "id"|"createdAt"> = {
+    type,
+    majorId: String(fd.get("majorId") || ""),
+    courseId: String(fd.get("courseId") || ""),
+    stem: String(fd.get("stem") || ""),
+  };
+
+  payload.degreeId = optionalField(fd, "degreeId");
+  payload.ministryId = optionalField(fd, "ministryId");
+  payload.examYearId = optionalField(fd, "examYearId");
+  payload.sourceId = optionalField(fd, "sourceId");
+  payload.chapterId = optionalField(fd, "chapterId");
+  payload.expl = optionalField(fd, "expl");
+
+  if (type !== "qa") {
+    payload.options = [
+      { label: "A", text: String(fd.get("optA") || "") },
+      { label: "B", text: String(fd.get("optB") || "") },
+      { label: "C", text: String(fd.get("optC") || "") },
+      { label: "D", text: String(fd.get("optD") || "") },
+    ];
+    payload.correctLabel = String(fd.get("correctLabel") || "A") as Question["correctLabel"];
+  }
+
+  return payload;
 }
 
 // فرم‌ساز
