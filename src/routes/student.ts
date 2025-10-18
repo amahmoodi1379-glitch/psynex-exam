@@ -426,6 +426,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         usage: usageSummary,
         talifiExamMaxQuestions: ctx.plan.usageLimits?.exams.byMode.talifi?.maxQuestions ?? null,
       };
+      const showChallengeTab = !!ctx.plan.featureFlags?.challengeHub;
 
       const body = `
       <style>
@@ -475,7 +476,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       <h1>صفحه دانشجو</h1>
       <div class="tabbar">
         <button data-tab="tab-single" class="active">تک‌سؤال‌ها</button>
-        <button data-tab="tab-challenges">چالش‌ها</button>
+        ${showChallengeTab ? `<button data-tab="tab-challenges">چالش‌ها</button>` : ``}
         <button data-tab="tab-qa">پرسش‌های تشریحی</button>
         <button data-tab="tab-stats">آمار</button>
         <button data-tab="tab-exam">آزمون</button>
@@ -519,6 +520,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         </div>
       </div>
 
+      ${showChallengeTab ? `
       <!-- چالش‌ها -->
       <div class="card tabsec" id="tab-challenges">
         <b>سؤال‌های چالشی (سؤال‌هایی که قبلاً غلط زده‌ای)</b>
@@ -551,7 +553,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           <div id="cresult" style="margin-top:10px" class="muted"></div>
           <button id="cnextBtn" style="margin-top:8px">چالشی بعدی</button>
         </div>
-      </div>
+      </div>` : ``}
 
       <!-- پرسش‌های تشریحی -->
       <div class="card tabsec" id="tab-qa">
@@ -687,8 +689,10 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         // تب‌ها
         const tabs = document.querySelectorAll('.tabbar button');
         function showTab(id){
-          document.querySelectorAll('.tabsec').forEach(el=>el.style.display='none');
-          document.getElementById(id).style.display='block';
+          const target = document.getElementById(id);
+          if (!target) return;
+          document.querySelectorAll('.tabsec').forEach(el=>{ if (el) el.style.display='none'; });
+          target.style.display='block';
           tabs.forEach(b=>b.classList.toggle('active', b.dataset.tab===id));
           location.hash = id;
         }
@@ -706,9 +710,16 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
         // helper برای دراپ‌داون‌ها
         async function fill(id, url, v="id", l="name", allowEmpty=true) {
-          const el = $("#"+id); el.innerHTML = allowEmpty ? "<option value=''>--</option>" : "";
+          const el = document.getElementById(id);
+          if (!el) return;
+          el.innerHTML = allowEmpty ? "<option value=''>--</option>" : "";
           const res = await fetch(url); const items = await res.json();
-          for (const it of items) { const o=document.createElement("option"); o.value=it[v]; o.textContent=it[l]; el.appendChild(o); }
+          for (const it of items) {
+            const o=document.createElement("option");
+            o.value=it[v];
+            o.textContent=it[l];
+            el.appendChild(o);
+          }
         }
 
         // ---------- تک‌سؤال‌ها ----------
@@ -761,11 +772,17 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           };
         }
         function currentFiltersChallenge(){
+          const valueOf = (id) => {
+            const node = document.getElementById(id);
+            if (!node || !("value" in node)) return undefined;
+            const val = node.value;
+            return val ? val : undefined;
+          };
           return {
-            majorId: $("#cmajor").value || undefined,
-            courseId: $("#ccourse").value || undefined,
-            sourceId: $("#csource").value || undefined,
-            chapterId: $("#cchapter").value || undefined
+            majorId: valueOf("cmajor"),
+            courseId: valueOf("ccourse"),
+            sourceId: valueOf("csource"),
+            chapterId: valueOf("cchapter"),
           };
         }
 
@@ -837,43 +854,55 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
         // ---------- چالش‌ها ----------
         async function initCascadesChallenge() {
+          const majorEl = document.getElementById("cmajor");
+          const courseEl = document.getElementById("ccourse");
+          const sourceEl = document.getElementById("csource");
+          const chapterEl = document.getElementById("cchapter");
+          if (!majorEl || !courseEl || !sourceEl || !chapterEl) return;
           await fill("cmajor", "/api/taxonomy/majors", "id", "name", false);
           const upd = async () => {
-            const mid = $("#cmajor").value || "";
+            const mid = ("value" in majorEl ? majorEl.value : "") || "";
             await fill("ccourse", "/api/taxonomy/courses?majorId="+encodeURIComponent(mid));
-            const cid = $("#ccourse").value || "";
+            const cid = ("value" in courseEl ? courseEl.value : "") || "";
             await fill("csource", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
-            const sid = $("#csource").value || "";
+            const sid = ("value" in sourceEl ? sourceEl.value : "") || "";
             await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
           };
           await upd();
-          $("#cmajor").addEventListener("change", upd);
-          $("#ccourse").addEventListener("change", async () => {
-            const cid = $("#ccourse").value || "";
+          if ("addEventListener" in majorEl) majorEl.addEventListener("change", upd);
+          if ("addEventListener" in courseEl) courseEl.addEventListener("change", async () => {
+            const cid = ("value" in courseEl ? courseEl.value : "") || "";
             await fill("csource", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
           });
-          $("#csource").addEventListener("change", async () => {
-            const sid = $("#csource").value || "";
+          if ("addEventListener" in sourceEl) sourceEl.addEventListener("change", async () => {
+            const sid = ("value" in sourceEl ? sourceEl.value : "") || "";
             await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
           });
         }
 
         async function fetchChallenge() {
-          const majorId = $("#cmajor").value;
+          const majorSelect = document.getElementById("cmajor");
+          if (!majorSelect || !("value" in majorSelect)) return;
+          const majorId = majorSelect.value;
           if (!majorId) { alert("رشته را انتخاب کن."); return; }
           const params = new URLSearchParams({
             clientId,
-            type: $("#ctype").value,
             majorId,
-            courseId: $("#ccourse").value,
-            sourceId: $("#csource").value,
-            chapterId: $("#cchapter").value
           });
+          const typeSelect = document.getElementById("ctype");
+          if (typeSelect && "value" in typeSelect && typeSelect.value) params.set("type", typeSelect.value);
+          const courseSelect = document.getElementById("ccourse");
+          if (courseSelect && "value" in courseSelect && courseSelect.value) params.set("courseId", courseSelect.value);
+          const sourceSelect = document.getElementById("csource");
+          if (sourceSelect && "value" in sourceSelect && sourceSelect.value) params.set("sourceId", sourceSelect.value);
+          const chapterSelect = document.getElementById("cchapter");
+          if (chapterSelect && "value" in chapterSelect && chapterSelect.value) params.set("chapterId", chapterSelect.value);
           const r = await fetch("/api/student/challenge-next?"+params.toString());
           const d = await r.json();
           if (d.quota) applyQuotaUpdate(d.quota);
           if (!d.ok) {
-            $("#cbox").style.display="none";
+            const box = document.getElementById("cbox");
+            if (box) box.style.display="none";
             alert(d.message || d.error || "سؤال چالشی پیدا نشد.");
             return;
           }
@@ -881,20 +910,26 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         }
 
         function renderChallenge(q) {
-          $("#cbox").style.display="block";
-          $("#cstem").textContent = q.stem;
-          const box = $("#copts"); box.innerHTML = "";
+          const wrapper = document.getElementById("cbox");
+          const stemEl = document.getElementById("cstem");
+          const optsContainer = document.getElementById("copts");
+          if (!wrapper || !stemEl || !optsContainer) return;
+          wrapper.style.display="block";
+          stemEl.textContent = q.stem;
+          optsContainer.innerHTML = "";
           for (const o of (q.options || [])) {
             const btn = document.createElement("button");
             btn.textContent = o.label + ") " + o.text;
             btn.style.display = "block";
             btn.style.margin = "6px 0";
             btn.onclick = () => answer(q, o.label, "challenge");
-            box.appendChild(btn);
+            optsContainer.appendChild(btn);
           }
-          $("#cresult").textContent = "";
-          $("#cnextBtn").onclick = () => fetchChallenge();
-          $("#cbox").dataset.id = q.id; $("#cbox").dataset.type = q.type;
+          const resultEl = document.getElementById("cresult");
+          if (resultEl) resultEl.textContent = "";
+          const nextBtn = document.getElementById("cnextBtn");
+          if (nextBtn) nextBtn.onclick = () => fetchChallenge();
+          wrapper.dataset.id = q.id; wrapper.dataset.type = q.type;
         }
 
         // ---------- پرسش‌های تشریحی ----------
@@ -1049,8 +1084,10 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         }
 
         async function answer(q, choice, mode) {
-          const quality = Number((mode==="single" ? $("#quality").value : $("#cquality").value) || "") || undefined;
-          const difficulty = Number((mode==="single" ? $("#difficulty").value : $("#cdifficulty").value) || "") || undefined;
+          const qualityEl = mode==="single" ? document.getElementById("quality") : document.getElementById("cquality");
+          const difficultyEl = mode==="single" ? document.getElementById("difficulty") : document.getElementById("cdifficulty");
+          const quality = qualityEl && "value" in qualityEl ? (Number(qualityEl.value || "") || undefined) : undefined;
+          const difficulty = difficultyEl && "value" in difficultyEl ? (Number(difficultyEl.value || "") || undefined) : undefined;
           const filters = mode==="single" ? currentFiltersSingle() : currentFiltersChallenge();
           const payload = { id: q.id, type: q.type, clientId, quality, difficulty, filters };
           if (choice) { payload.choice = choice; }
@@ -1386,16 +1423,26 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         }
 
         // رویدادها
-        $("#fetchBtn").addEventListener("click", fetchRandom);
-        $("#cfetchBtn").addEventListener("click", fetchChallenge);
-        $("#qa-search").addEventListener("click", loadQaList);
-        $("#qa-random").addEventListener("click", fetchRandomQa);
-        $("#sload").addEventListener("click", loadStats);
-        $("#x-start").addEventListener("click", startExam);
-        $("#x-prev").addEventListener("click", prevQ);
-        $("#x-next").addEventListener("click", nextQ);
-        $("#x-submit").addEventListener("click", submitExam);
-        document.getElementById("x-show-review").addEventListener("click", loadReview);
+        const singleFetchBtn = document.getElementById("fetchBtn");
+        if (singleFetchBtn) singleFetchBtn.addEventListener("click", fetchRandom);
+        const challengeFetchBtn = document.getElementById("cfetchBtn");
+        if (challengeFetchBtn) challengeFetchBtn.addEventListener("click", fetchChallenge);
+        const qaSearchBtn = document.getElementById("qa-search");
+        if (qaSearchBtn) qaSearchBtn.addEventListener("click", loadQaList);
+        const qaRandomBtn = document.getElementById("qa-random");
+        if (qaRandomBtn) qaRandomBtn.addEventListener("click", fetchRandomQa);
+        const statsBtn = document.getElementById("sload");
+        if (statsBtn) statsBtn.addEventListener("click", loadStats);
+        const examStartBtn = document.getElementById("x-start");
+        if (examStartBtn) examStartBtn.addEventListener("click", startExam);
+        const examPrevBtn = document.getElementById("x-prev");
+        if (examPrevBtn) examPrevBtn.addEventListener("click", prevQ);
+        const examNextBtn = document.getElementById("x-next");
+        if (examNextBtn) examNextBtn.addEventListener("click", nextQ);
+        const examSubmitBtn = document.getElementById("x-submit");
+        if (examSubmitBtn) examSubmitBtn.addEventListener("click", submitExam);
+        const reviewBtn = document.getElementById("x-show-review");
+        if (reviewBtn) reviewBtn.addEventListener("click", loadReview);
 
         // تغییر فیلدهای آزمون بر اساس mode (JS خالص)
         const xmodeEl = document.getElementById("x-mode");
@@ -1403,7 +1450,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
         async function initAll(){
           await initCascadesSingle();
-          await initCascadesChallenge();
+          if (document.getElementById("cmajor")) { await initCascadesChallenge(); }
           await initCascadesQA();
           await initCascadesExam();
           toggleExamFields();
