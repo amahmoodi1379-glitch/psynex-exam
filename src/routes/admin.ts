@@ -1,5 +1,15 @@
 import { html, json, page } from "../lib/http";
-import { createQuestion, listQuestions, deleteQuestion, getQuestion, updateQuestion, type QuestionType, type Question } from "../lib/dataStore";
+import {
+  createQuestion,
+  listQuestions,
+  deleteQuestion,
+  getQuestion,
+  updateQuestion,
+  findQuestionById,
+  searchQuestionsByStem,
+  type QuestionType,
+  type Question,
+} from "../lib/dataStore";
 
 export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
   const p = url.pathname;
@@ -47,8 +57,17 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
   if (p === "/api/admin/questions" && req.method === "GET") {
     return (async () => {
       const type = (url.searchParams.get("type") || "konkur") as "konkur"|"talifi"|"qa";
+      const id = (url.searchParams.get("id") || "").trim();
+      const query = (url.searchParams.get("query") || "").trim();
       if (!env || !env.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
-      const list = await listQuestions(env, type, 50);
+      let list: Question[];
+      if (id) {
+        list = await findQuestionById(env, type, id);
+      } else if (query) {
+        list = await searchQuestionsByStem(env, type, query, 200);
+      } else {
+        list = await listQuestions(env, type, 50);
+      }
       return json({ ok: true, data: list });
     })();
   }
@@ -106,15 +125,23 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
       <!-- تب مدیریت -->
       <div class="card tabsec" id="tab-manage">
         <b>مدیریت سوالات</b>
-        <div style="display:flex; gap:8px; align-items:center">
-          <label>نوع:</label>
-          <select id="m-type">
-            <option value="konkur">کنکور</option>
-            <option value="talifi">تالیفی</option>
-            <option value="qa">پرسش و پاسخ</option>
-          </select>
-          <button id="m-load">بارگذاری</button>
-        </div>
+        <form id="m-form" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap">
+          <label>نوع:<br>
+            <select id="m-type" name="type">
+              <option value="konkur">کنکور</option>
+              <option value="talifi">تالیفی</option>
+              <option value="qa">پرسش و پاسخ</option>
+            </select>
+          </label>
+          <label>شناسه (اختیاری):<br>
+            <input id="m-id" name="id" placeholder="UUID" style="min-width:180px">
+          </label>
+          <label>عبارت متن (اختیاری):<br>
+            <input id="m-query" name="query" placeholder="بخشی از صورت سوال" style="min-width:220px">
+          </label>
+          <button type="submit" id="m-load">جست‌وجو</button>
+        </form>
+        <div id="m-status" class="muted" style="margin-top:6px"></div>
         <div style="margin-top:10px">
           <table border="1" cellpadding="6" style="width:100%; border-collapse:collapse">
             <thead><tr><th>شناسه</th><th>صورت سوال</th><th>نوع</th><th>عملیات</th></tr></thead>
@@ -331,17 +358,39 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
           }
           if (typeof editDialog.close === "function") editDialog.close();
           else editDialog.style.display = "none";
-          document.getElementById("m-load").click();
+          loadManageList();
         });
 
         // مدیریت
-        document.getElementById("m-load").onclick = async () => {
+        const manageForm = document.getElementById("m-form");
+        const manageStatus = document.getElementById("m-status");
+        async function loadManageList() {
           const type = document.getElementById("m-type").value;
-          const res = await fetch("/api/admin/questions?type=" + type);
-          const data = await res.json();
+          const id = document.getElementById("m-id").value.trim();
+          const query = document.getElementById("m-query").value.trim();
+          const params = new URLSearchParams({ type });
+          if (id) params.set("id", id);
+          if (query) params.set("query", query);
+          manageStatus.textContent = "در حال جست‌وجو...";
+          let data;
+          try {
+            const res = await fetch("/api/admin/questions?" + params.toString());
+            data = await res.json();
+          } catch (err) {
+            manageStatus.textContent = "خطا در برقراری ارتباط";
+            return;
+          }
           const tb = document.getElementById("m-list");
           tb.innerHTML = "";
-          if (!data.ok) { tb.innerHTML = "<tr><td colspan='4'>خطا: "+(data.error||"")+"</td></tr>"; return; }
+          if (!data.ok) {
+            manageStatus.textContent = "خطا: " + (data.error || "نامشخص");
+            return;
+          }
+          manageStatus.textContent = "";
+          if (!Array.isArray(data.data) || data.data.length === 0) {
+            manageStatus.textContent = "موردی یافت نشد";
+            return;
+          }
           for (const it of data.data) {
             const tr = document.createElement("tr");
             tr.innerHTML = "<td>"+it.id+"</td><td>"+(it.stem?.slice(0,120) || "")+"</td><td>"+it.type+"</td><td></td>";
@@ -360,12 +409,16 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
             delBtn.onclick = async () => {
               if (!confirm("حذف این آیتم؟")) return;
               await fetch("/api/admin/question/delete?type="+type+"&id="+encodeURIComponent(it.id), { method: "DELETE" });
-              document.getElementById("m-load").click();
+              loadManageList();
             };
             actions.appendChild(delBtn);
             tb.appendChild(tr);
           }
-        };
+        }
+        manageForm.addEventListener("submit", (ev) => {
+          ev.preventDefault();
+          loadManageList();
+        });
       </script>
     `;
     return html(page("ادمین", body));

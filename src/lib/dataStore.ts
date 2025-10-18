@@ -34,6 +34,30 @@ export async function getQuestion(env: any, type: QuestionType, id: string): Pro
   return raw ? JSON.parse(raw) : null;
 }
 
+export async function findQuestionById(env: any, type: QuestionType, id: string): Promise<Question[]> {
+  if (!id) return [];
+  const raw = await env.DATA.get(prefix(type) + id);
+  if (!raw) return [];
+  return [JSON.parse(raw) as Question];
+}
+
+export async function searchQuestionsByStem(
+  env: any,
+  type: QuestionType,
+  query: string,
+  scanLimit = 200
+): Promise<Question[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const { keys } = await env.DATA.list({ prefix: prefix(type), limit: scanLimit });
+  const needle = q.toLowerCase();
+  const rawValues = await Promise.all(keys.map((key: { name: string }) => env.DATA.get(key.name)));
+  return rawValues
+    .map((raw) => (raw ? (JSON.parse(raw) as Question) : null))
+    .filter((item): item is Question => Boolean(item && item.stem))
+    .filter((item) => item.stem.toLowerCase().includes(needle));
+}
+
 // ویرایش
 export async function updateQuestion(
   env: any,
