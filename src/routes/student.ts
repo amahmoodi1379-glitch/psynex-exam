@@ -931,10 +931,10 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
         // ---------- چالش‌ها ----------
         async function initCascadesChallenge() {
-          const majorEl = document.getElementById("cmajor") as HTMLSelectElement | null;
-          const courseEl = document.getElementById("ccourse") as HTMLSelectElement | null;
-          const sourceEl = document.getElementById("csource") as HTMLSelectElement | null;
-          const chapterEl = document.getElementById("cchapter") as HTMLSelectElement | null;
+          const majorEl = /** @type {HTMLSelectElement|null} */ (document.getElementById("cmajor"));
+          const courseEl = /** @type {HTMLSelectElement|null} */ (document.getElementById("ccourse"));
+          const sourceEl = /** @type {HTMLSelectElement|null} */ (document.getElementById("csource"));
+          const chapterEl = /** @type {HTMLSelectElement|null} */ (document.getElementById("cchapter"));
           if (!majorEl || !courseEl || !sourceEl || !chapterEl) return;
           await fill("cmajor", "/api/taxonomy/majors", "id", "name", false);
           const upd = async () => {
@@ -960,7 +960,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         }
 
         async function fetchChallenge() {
-          const majorSelect = document.getElementById("cmajor") as HTMLSelectElement | null;
+          const majorSelect = /** @type {HTMLSelectElement|null} */ (document.getElementById("cmajor"));
           if (!majorSelect) return;
           const majorId = majorSelect.value;
           if (!majorId) { alert("رشته را انتخاب کن."); return; }
@@ -968,16 +968,16 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             clientId,
             majorId,
           });
-          const maybeSetParam = (select: HTMLSelectElement | null, key: string) => {
-            if (select?.value) params.set(key, select.value);
+          const maybeSetParam = (select, key) => {
+            if (select && "value" in select && select.value) params.set(key, select.value);
           };
-          const typeSelect = document.getElementById("ctype") as HTMLSelectElement | null;
+          const typeSelect = /** @type {HTMLSelectElement|null} */ (document.getElementById("ctype"));
           maybeSetParam(typeSelect, "type");
-          const courseSelect = document.getElementById("ccourse") as HTMLSelectElement | null;
+          const courseSelect = /** @type {HTMLSelectElement|null} */ (document.getElementById("ccourse"));
           maybeSetParam(courseSelect, "courseId");
-          const sourceSelect = document.getElementById("csource") as HTMLSelectElement | null;
+          const sourceSelect = /** @type {HTMLSelectElement|null} */ (document.getElementById("csource"));
           maybeSetParam(sourceSelect, "sourceId");
-          const chapterSelect = document.getElementById("cchapter") as HTMLSelectElement | null;
+          const chapterSelect = /** @type {HTMLSelectElement|null} */ (document.getElementById("cchapter"));
           maybeSetParam(chapterSelect, "chapterId");
           const r = await fetch("/api/student/challenge-next?"+params.toString());
           const d = await r.json();
