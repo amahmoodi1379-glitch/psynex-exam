@@ -95,19 +95,19 @@ export const PLAN_CATALOG = {
     available: true,
     features: [
       "دسترسی کامل به بانک سؤال کنکور و تالیفی",
-      "پوشش سؤال‌های چالشی با مرور هوشمند",
+      "تحلیل پیشرفت با گزارش‌های روزانه پایه",
       "ساخت آزمون شخصی تا سه بار در روز",
       "پشتیبانی استاندارد درون‌سیستم",
     ],
     dailyLimits: {
       randomQuestionsPerDay: 120,
-      challengeQuestionsPerDay: 40,
+      challengeQuestionsPerDay: 0,
       examsPerDay: 3,
       qaSessionsPerDay: 20,
     } as PlanDailyLimits,
     usageLimits: {
       randomFetches: { konkur: null, talifi: null, qa: null },
-      challengeFetches: { enabled: true, perType: { konkur: null, talifi: null } },
+      challengeFetches: { enabled: false, perType: { konkur: 0, talifi: 0 } },
       exams: {
         totalPerDay: 3,
         byMode: {
@@ -122,7 +122,7 @@ export const PLAN_CATALOG = {
     } as PlanUsageLimits,
     featureFlags: {
       qaBank: true,
-      challengeHub: true,
+      challengeHub: false,
       examBuilder: true,
       analytics: false,
       prioritySupport: false,
