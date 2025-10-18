@@ -9,6 +9,8 @@ import {
 } from "../lib/dataStore";
 import { consumeUsage, describeUsageForPlan, getUsageSnapshots } from "../lib/usage";
 
+const TALIFI_COMBO_ACTION = "combo:talifi_challenge";
+
 type StudentContext = {
   session: SessionPayload;
   plan: PlanDefinition & { tier: PlanTier };
@@ -69,13 +71,33 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
       const usageLimit = ctx.plan.usageLimits?.randomFetches?.[type] ?? null;
       let quotaRecord = null as null | { action: string; remaining: number | null; limit: number | null };
+      const increments = [] as Parameters<typeof consumeUsage>[2];
       if (usageLimit !== null && usageLimit !== undefined) {
-        const usage = await consumeUsage(env, ctx.session.email, [{ action: `random:${type}`, limit: usageLimit }]);
+        increments.push({ action: `random:${type}`, limit: usageLimit });
+      }
+      const comboLimit = type === "talifi"
+        ? ctx.plan.usageLimits?.comboActions?.[TALIFI_COMBO_ACTION] ?? null
+        : null;
+      if (type === "talifi" && comboLimit !== null && comboLimit !== undefined) {
+        increments.push({ action: TALIFI_COMBO_ACTION, limit: comboLimit });
+      }
+      if (increments.length > 0) {
+        const usage = await consumeUsage(env, ctx.session.email, increments);
         if (!usage.ok) {
-          const msg = type === "talifi"
-            ? "سقف درخواست سؤال تالیفی برای امروز تمام شده است."
-            : "سقف استفاده روزانه این بخش تمام شده است.";
-          return quotaError(msg, { quota: { action: `random:${type}`, remaining: usage.remaining, limit: usage.limit } });
+          if (usage.action === `random:${type}`) {
+            const msg = type === "talifi"
+              ? "سقف درخواست سؤال تالیفی برای امروز تمام شده است."
+              : "سقف استفاده روزانه این بخش تمام شده است.";
+            return quotaError(msg, { quota: { action: usage.action, remaining: usage.remaining, limit: usage.limit } });
+          }
+          if (usage.action === TALIFI_COMBO_ACTION) {
+            return quotaError("سقف مشترک استفاده از سؤال‌های تالیفی و چالشی تالیفی به پایان رسیده است.", {
+              quota: { action: usage.action, remaining: usage.remaining, limit: usage.limit },
+            });
+          }
+          return quotaError("سقف استفاده روزانه این بخش تمام شده است.", {
+            quota: { action: usage.action, remaining: usage.remaining, limit: usage.limit },
+          });
         }
         const rec = usage.records.find(r => r.action === `random:${type}`) || null;
         if (rec) quotaRecord = { action: `random:${type}`, remaining: rec.remaining, limit: rec.limit };
@@ -161,10 +183,32 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       const resolvedType: "konkur" | "talifi" = q.type === "talifi" ? "talifi" : "konkur";
       let quotaRecord = null as null | { action: string; remaining: number | null; limit: number | null };
       const limit = challengeCfg.perType?.[resolvedType] ?? null;
+      const increments = [] as Parameters<typeof consumeUsage>[2];
       if (limit !== null && limit !== undefined) {
-        const usage = await consumeUsage(env, ctx.session.email, [{ action: `challenge:${resolvedType}`, limit }]);
+        increments.push({ action: `challenge:${resolvedType}`, limit });
+      }
+      const comboLimit = resolvedType === "talifi"
+        ? ctx.plan.usageLimits?.comboActions?.[TALIFI_COMBO_ACTION] ?? null
+        : null;
+      if (resolvedType === "talifi" && comboLimit !== null && comboLimit !== undefined) {
+        increments.push({ action: TALIFI_COMBO_ACTION, limit: comboLimit });
+      }
+      if (increments.length > 0) {
+        const usage = await consumeUsage(env, ctx.session.email, increments);
         if (!usage.ok) {
-          return quotaError("سقف سؤال‌های چالشی امروز تمام شده است.", { quota: { action: `challenge:${resolvedType}`, remaining: usage.remaining, limit: usage.limit } });
+          if (usage.action === `challenge:${resolvedType}`) {
+            return quotaError("سقف سؤال‌های چالشی امروز تمام شده است.", {
+              quota: { action: usage.action, remaining: usage.remaining, limit: usage.limit },
+            });
+          }
+          if (usage.action === TALIFI_COMBO_ACTION) {
+            return quotaError("سقف مشترک استفاده از سؤال‌های تالیفی و چالشی تالیفی به پایان رسیده است.", {
+              quota: { action: usage.action, remaining: usage.remaining, limit: usage.limit },
+            });
+          }
+          return quotaError("سقف استفاده روزانه این بخش تمام شده است.", {
+            quota: { action: usage.action, remaining: usage.remaining, limit: usage.limit },
+          });
         }
         const rec = usage.records.find(r => r.action === `challenge:${resolvedType}`) || null;
         if (rec) quotaRecord = { action: `challenge:${resolvedType}`, remaining: rec.remaining, limit: rec.limit };
