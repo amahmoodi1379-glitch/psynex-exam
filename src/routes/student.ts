@@ -854,49 +854,54 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
         // ---------- چالش‌ها ----------
         async function initCascadesChallenge() {
-          const majorEl = document.getElementById("cmajor");
-          const courseEl = document.getElementById("ccourse");
-          const sourceEl = document.getElementById("csource");
-          const chapterEl = document.getElementById("cchapter");
+          const majorEl = document.getElementById("cmajor") as HTMLSelectElement | null;
+          const courseEl = document.getElementById("ccourse") as HTMLSelectElement | null;
+          const sourceEl = document.getElementById("csource") as HTMLSelectElement | null;
+          const chapterEl = document.getElementById("cchapter") as HTMLSelectElement | null;
           if (!majorEl || !courseEl || !sourceEl || !chapterEl) return;
           await fill("cmajor", "/api/taxonomy/majors", "id", "name", false);
           const upd = async () => {
-            const mid = ("value" in majorEl ? majorEl.value : "") || "";
+            const mid = majorEl.value || "";
             await fill("ccourse", "/api/taxonomy/courses?majorId="+encodeURIComponent(mid));
-            const cid = ("value" in courseEl ? courseEl.value : "") || "";
+            const cid = courseEl.value || "";
             await fill("csource", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
-            const sid = ("value" in sourceEl ? sourceEl.value : "") || "";
+            const sid = sourceEl.value || "";
             await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
           };
           await upd();
           if ("addEventListener" in majorEl) majorEl.addEventListener("change", upd);
           if ("addEventListener" in courseEl) courseEl.addEventListener("change", async () => {
-            const cid = ("value" in courseEl ? courseEl.value : "") || "";
+            const cid = courseEl.value || "";
             await fill("csource", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
+            const sid = sourceEl.value || "";
+            await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
           });
           if ("addEventListener" in sourceEl) sourceEl.addEventListener("change", async () => {
-            const sid = ("value" in sourceEl ? sourceEl.value : "") || "";
+            const sid = sourceEl.value || "";
             await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
           });
         }
 
         async function fetchChallenge() {
-          const majorSelect = document.getElementById("cmajor");
-          if (!majorSelect || !("value" in majorSelect)) return;
+          const majorSelect = document.getElementById("cmajor") as HTMLSelectElement | null;
+          if (!majorSelect) return;
           const majorId = majorSelect.value;
           if (!majorId) { alert("رشته را انتخاب کن."); return; }
           const params = new URLSearchParams({
             clientId,
             majorId,
           });
-          const typeSelect = document.getElementById("ctype");
-          if (typeSelect && "value" in typeSelect && typeSelect.value) params.set("type", typeSelect.value);
-          const courseSelect = document.getElementById("ccourse");
-          if (courseSelect && "value" in courseSelect && courseSelect.value) params.set("courseId", courseSelect.value);
-          const sourceSelect = document.getElementById("csource");
-          if (sourceSelect && "value" in sourceSelect && sourceSelect.value) params.set("sourceId", sourceSelect.value);
-          const chapterSelect = document.getElementById("cchapter");
-          if (chapterSelect && "value" in chapterSelect && chapterSelect.value) params.set("chapterId", chapterSelect.value);
+          const maybeSetParam = (select: HTMLSelectElement | null, key: string) => {
+            if (select?.value) params.set(key, select.value);
+          };
+          const typeSelect = document.getElementById("ctype") as HTMLSelectElement | null;
+          maybeSetParam(typeSelect, "type");
+          const courseSelect = document.getElementById("ccourse") as HTMLSelectElement | null;
+          maybeSetParam(courseSelect, "courseId");
+          const sourceSelect = document.getElementById("csource") as HTMLSelectElement | null;
+          maybeSetParam(sourceSelect, "sourceId");
+          const chapterSelect = document.getElementById("cchapter") as HTMLSelectElement | null;
+          maybeSetParam(chapterSelect, "chapterId");
           const r = await fetch("/api/student/challenge-next?"+params.toString());
           const d = await r.json();
           if (d.quota) applyQuotaUpdate(d.quota);
