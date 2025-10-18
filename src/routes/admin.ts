@@ -271,7 +271,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         }
 
         async function openEdit(type, id) {
-          const res = await fetch(`/api/admin/question?type=${type}&id=${encodeURIComponent(id)}`);
+          const res = await fetch('/api/admin/question?type=' + type + '&id=' + encodeURIComponent(id));
           const data = await res.json();
           if (!data.ok) {
             alert(data.error || "خطا در دریافت اطلاعات سوال");
@@ -313,7 +313,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
             alert("نوع یا شناسه موجود نیست");
             return;
           }
-          const res = await fetch(`/api/admin/question/update?type=${encodeURIComponent(type)}&id=${encodeURIComponent(id)}`, {
+          const res = await fetch('/api/admin/question/update?type=' + encodeURIComponent(type) + '&id=' + encodeURIComponent(id), {
             method: "POST",
             body: fd,
           });
