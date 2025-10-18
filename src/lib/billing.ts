@@ -22,6 +22,7 @@ export type PlanUsageLimits = {
     enabled: boolean;
     perType: Record<"konkur" | "talifi", number | null>;
   };
+  comboActions?: Record<string, number | null>;
   exams: {
     totalPerDay: number | null;
     byMode: {
@@ -106,8 +107,9 @@ export const PLAN_CATALOG = {
       qaSessionsPerDay: 20,
     } as PlanDailyLimits,
     usageLimits: {
-      randomFetches: { konkur: null, talifi: null, qa: null },
+      randomFetches: { konkur: null, talifi: 50, qa: null },
       challengeFetches: { enabled: false, perType: { konkur: 0, talifi: 0 } },
+      comboActions: {},
       exams: {
         totalPerDay: 3,
         byMode: {
@@ -153,8 +155,9 @@ export const PLAN_CATALOG = {
       qaSessionsPerDay: 60,
     } as PlanDailyLimits,
     usageLimits: {
-      randomFetches: { konkur: null, talifi: null, qa: null },
+      randomFetches: { konkur: null, talifi: 200, qa: null },
       challengeFetches: { enabled: true, perType: { konkur: null, talifi: null } },
+      comboActions: { "combo:talifi_challenge": 200 },
       exams: {
         totalPerDay: 10,
         byMode: {

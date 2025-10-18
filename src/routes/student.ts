@@ -9,6 +9,68 @@ import {
 } from "../lib/dataStore";
 import { consumeUsage, describeUsageForPlan, getUsageSnapshots } from "../lib/usage";
 
+const TALIFI_COMBO_ACTION = "combo:talifi_challenge";
+
+type QuotaRecord = { action: string; remaining: number | null; limit: number | null };
+
+type UsageLimitOptions = {
+  env: any;
+  email: string;
+  primaryAction: string;
+  primaryLimit: number | null | undefined;
+  primaryExceededMessage: string;
+  fallbackExceededMessage: string;
+  comboLimit?: number | null | undefined;
+  comboExceededMessage?: string;
+};
+
+async function enforceUsageLimits(options: UsageLimitOptions): Promise<{ quotaRecord: QuotaRecord | null; error: Response | null }> {
+  const {
+    env,
+    email,
+    primaryAction,
+    primaryLimit,
+    primaryExceededMessage,
+    fallbackExceededMessage,
+    comboLimit,
+    comboExceededMessage,
+  } = options;
+
+  const increments = [] as Parameters<typeof consumeUsage>[2];
+  if (primaryLimit !== null && primaryLimit !== undefined) {
+    increments.push({ action: primaryAction, limit: primaryLimit });
+  }
+  if (comboLimit !== null && comboLimit !== undefined) {
+    increments.push({ action: TALIFI_COMBO_ACTION, limit: comboLimit });
+  }
+
+  if (increments.length === 0) {
+    return { quotaRecord: null, error: null };
+  }
+
+  const usage = await consumeUsage(env, email, increments);
+  if (!usage.ok) {
+    const quota = { action: usage.action, remaining: usage.remaining, limit: usage.limit };
+    if (usage.action === primaryAction) {
+      return { quotaRecord: null, error: quotaError(primaryExceededMessage, { quota }) };
+    }
+    if (usage.action === TALIFI_COMBO_ACTION) {
+      return {
+        quotaRecord: null,
+        error: quotaError(comboExceededMessage || fallbackExceededMessage, { quota }),
+      };
+    }
+    return { quotaRecord: null, error: quotaError(fallbackExceededMessage, { quota }) };
+  }
+
+  const record = usage.records.find((r) => r.action === primaryAction) || null;
+  if (!record) {
+    return { quotaRecord: null, error: null };
+  }
+
+  return { quotaRecord: { action: record.action, remaining: record.remaining, limit: record.limit }, error: null };
+}
+
 type StudentContext = {
   session: SessionPayload;
   plan: PlanDefinition & { tier: PlanTier };
@@ -68,18 +130,25 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
       if (!env?.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
       const usageLimit = ctx.plan.usageLimits?.randomFetches?.[type] ?? null;
-      let quotaRecord = null as null | { action: string; remaining: number | null; limit: number | null };
-      if (usageLimit !== null && usageLimit !== undefined) {
-        const usage = await consumeUsage(env, ctx.session.email, [{ action: `random:${type}`, limit: usageLimit }]);
-        if (!usage.ok) {
-          const msg = type === "talifi"
-            ? "سقف درخواست سؤال تالیفی برای امروز تمام شده است."
-            : "سقف استفاده روزانه این بخش تمام شده است.";
-          return quotaError(msg, { quota: { action: `random:${type}`, remaining: usage.remaining, limit: usage.limit } });
-        }
-        const rec = usage.records.find(r => r.action === `random:${type}`) || null;
-        if (rec) quotaRecord = { action: `random:${type}`, remaining: rec.remaining, limit: rec.limit };
-      }
+      const comboLimit = type === "talifi"
+        ? ctx.plan.usageLimits?.comboActions?.[TALIFI_COMBO_ACTION] ?? null
+        : null;
+      const {
+        quotaRecord,
+        error,
+      } = await enforceUsageLimits({
+        env,
+        email: ctx.session.email,
+        primaryAction: `random:${type}`,
+        primaryLimit: usageLimit,
+        primaryExceededMessage: type === "talifi"
+          ? "سقف درخواست سؤال تالیفی برای امروز تمام شده است."
+          : "سقف استفاده روزانه این بخش تمام شده است.",
+        fallbackExceededMessage: "سقف استفاده روزانه این بخش تمام شده است.",
+        comboLimit,
+        comboExceededMessage: "سقف مشترک استفاده از سؤال‌های تالیفی و چالشی تالیفی به پایان رسیده است.",
+      });
+      if (error) return error;
       const q = await queryRandomQuestion(env, type, filters);
       if (!q) return json({ ok: false, error: "no_question" }, 404);
 
@@ -159,16 +228,24 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       const q = await chooseChallengeQuestion(env, clientId, filters, type);
       if (!q) return json({ ok: false, error: "no_challenge" }, 404);
       const resolvedType: "konkur" | "talifi" = q.type === "talifi" ? "talifi" : "konkur";
-      let quotaRecord = null as null | { action: string; remaining: number | null; limit: number | null };
       const limit = challengeCfg.perType?.[resolvedType] ?? null;
-      if (limit !== null && limit !== undefined) {
-        const usage = await consumeUsage(env, ctx.session.email, [{ action: `challenge:${resolvedType}`, limit }]);
-        if (!usage.ok) {
-          return quotaError("سقف سؤال‌های چالشی امروز تمام شده است.", { quota: { action: `challenge:${resolvedType}`, remaining: usage.remaining, limit: usage.limit } });
-        }
-        const rec = usage.records.find(r => r.action === `challenge:${resolvedType}`) || null;
-        if (rec) quotaRecord = { action: `challenge:${resolvedType}`, remaining: rec.remaining, limit: rec.limit };
-      }
+      const comboLimit = resolvedType === "talifi"
+        ? ctx.plan.usageLimits?.comboActions?.[TALIFI_COMBO_ACTION] ?? null
+        : null;
+      const {
+        quotaRecord,
+        error,
+      } = await enforceUsageLimits({
+        env,
+        email: ctx.session.email,
+        primaryAction: `challenge:${resolvedType}`,
+        primaryLimit: limit,
+        primaryExceededMessage: "سقف سؤال‌های چالشی امروز تمام شده است.",
+        fallbackExceededMessage: "سقف استفاده روزانه این بخش تمام شده است.",
+        comboLimit,
+        comboExceededMessage: "سقف مشترک استفاده از سؤال‌های تالیفی و چالشی تالیفی به پایان رسیده است.",
+      });
+      if (error) return error;
 
       const safe = {
         id: q.id,
