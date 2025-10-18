@@ -34,6 +34,36 @@ export async function getQuestion(env: any, type: QuestionType, id: string): Pro
   return raw ? JSON.parse(raw) : null;
 }
 
+export async function findQuestionById(env: any, type: QuestionType, id: string): Promise<Question[]> {
+  if (!id) return [];
+  const raw = await env.DATA.get(prefix(type) + id);
+  if (!raw) return [];
+  return [JSON.parse(raw) as Question];
+}
+
+export async function searchQuestionsByStem(
+  env: any,
+  type: QuestionType,
+  query: string,
+  scanLimit = 200
+): Promise<Question[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const { keys } = await env.DATA.list({ prefix: prefix(type), limit: scanLimit });
+  const needle = q.toLowerCase();
+  const out: Question[] = [];
+  for (const key of keys) {
+    const raw = await env.DATA.get(key.name);
+    if (!raw) continue;
+    const item: Question = JSON.parse(raw);
+    if (!item.stem) continue;
+    if (item.stem.toLowerCase().includes(needle)) {
+      out.push(item);
+    }
+  }
+  return out;
+}
+
 // ویرایش
 export async function updateQuestion(
   env: any,
