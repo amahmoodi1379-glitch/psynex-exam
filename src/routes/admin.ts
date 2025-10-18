@@ -184,7 +184,14 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
           }
           if (typeof selectedValue !== "undefined" && el.options.length) {
             const hasSelected = Array.from(el.options).some(o => o.selected);
-            if (!hasSelected) el.options[0].selected = true;
+            if (!hasSelected) {
+              const placeholder = document.createElement("option");
+              placeholder.value = "";
+              placeholder.textContent = "یک گزینه را انتخاب کنید";
+              placeholder.disabled = true;
+              placeholder.selected = true;
+              el.insertBefore(placeholder, el.firstChild);
+            }
           }
         }
         async function initCascades(rootId) {
