@@ -51,17 +51,11 @@ export async function searchQuestionsByStem(
   if (!q) return [];
   const { keys } = await env.DATA.list({ prefix: prefix(type), limit: scanLimit });
   const needle = q.toLowerCase();
-  const out: Question[] = [];
-  for (const key of keys) {
-    const raw = await env.DATA.get(key.name);
-    if (!raw) continue;
-    const item: Question = JSON.parse(raw);
-    if (!item.stem) continue;
-    if (item.stem.toLowerCase().includes(needle)) {
-      out.push(item);
-    }
-  }
-  return out;
+  const rawValues = await Promise.all(keys.map((key: { name: string }) => env.DATA.get(key.name)));
+  return rawValues
+    .map((raw) => (raw ? (JSON.parse(raw) as Question) : null))
+    .filter((item): item is Question => Boolean(item && item.stem))
+    .filter((item) => item.stem.toLowerCase().includes(needle));
 }
 
 // ویرایش
