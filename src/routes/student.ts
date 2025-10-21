@@ -124,10 +124,10 @@ async function buildPlanMeta(env: any, ctx: StudentContext): Promise<PlanMeta> {
           remaining: snap?.remaining ?? (typeof limit === "number" ? Math.max(0, limit) : null),
         };
       })
-      .filter((it) => it.limit !== null && it.limit !== undefined);
+      .filter((it) => it.limit != null);
   }
 
-  const tier = (session.planTier as PlanTier | null | undefined) ?? plan.tier;
+  const tier = session.planTier ?? plan.tier;
 
   return {
     planTier: tier,
@@ -553,7 +553,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         .tabbar button{margin:0 4px;padding:6px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer}
         .tabbar button.active{background:#222;color:#fff;border-color:#222}
         .tabsec{display:none}
-        .feature-locked{display:none!important}
+        .tabbar button.feature-locked,.tabsec.feature-locked{display:none}
         .bars{display:flex;align-items:flex-end;gap:2px;height:120px;border-bottom:1px solid #eee;margin-top:8px}
         .bar{width:6px;background:#888}
         .muted{color:#666}
@@ -778,6 +778,27 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         const planCatalog = planCatalogEl ? JSON.parse(planCatalogEl.textContent || '[]') : [];
         if (planCatalogEl) planCatalogEl.remove();
         const planMetaEl = document.getElementById('plan-meta');
+
+        /**
+         * @typedef {Object} PlanUsageSummary
+         * @property {string} action
+         * @property {string} label
+         * @property {?number} remaining
+         * @property {?number} limit
+         */
+
+        /**
+         * @typedef {Object} PlanMeta
+         * @property {string} planTier
+         * @property {?number} planExpiresAt
+         * @property {?Object} dailyLimits
+         * @property {?Object} featureFlags
+         * @property {PlanUsageSummary[]} usage
+         * @property {?number} talifiExamMaxQuestions
+         * @property {boolean} statsAccess
+         */
+
+        /** @type {PlanMeta|null} */
         let planMeta = planMetaEl ? JSON.parse(planMetaEl.textContent || '{}') : null;
         if (planMetaEl) planMetaEl.remove();
         const planByTier = {};
@@ -788,9 +809,9 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
         function updateFeatureVisibility() {
           const requirements = {
-            challengeHub: !!(planMeta && planMeta.featureFlags && planMeta.featureFlags.challengeHub),
-            qaBank: !!(planMeta && planMeta.featureFlags && planMeta.featureFlags.qaBank),
-            statsAccess: !!(planMeta && planMeta.statsAccess),
+            challengeHub: !!planMeta?.featureFlags?.challengeHub,
+            qaBank: !!planMeta?.featureFlags?.qaBank,
+            statsAccess: !!planMeta?.statsAccess,
           };
           Object.entries(requirements).forEach(([feature, enabled]) => {
             document.querySelectorAll('[data-requires-feature="' + feature + '"]').forEach(node => {
@@ -809,8 +830,15 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
         updateFeatureVisibility();
 
+        /** @typedef {{ silent?: boolean }} RefreshPlanMetaOptions */
+
+        /** @type {Promise<PlanMeta|null>|null} */
         let planMetaRequest = null;
 
+        /**
+         * @param {RefreshPlanMetaOptions} [options]
+         * @returns {Promise<PlanMeta|null>}
+         */
         async function refreshPlanMeta(options = {}) {
           const { silent = false } = options;
           if (planMetaRequest) return planMetaRequest;
@@ -843,7 +871,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             } catch (err) {
               if (!silent && statusMsgEl) {
                 statusMsgEl.classList.add('error');
-                const message = err && err.message ? err.message : String(err);
+                const message = err instanceof Error ? err.message : String(err);
                 statusMsgEl.textContent = 'خطا در بروزرسانی پلن: ' + message;
               } else {
                 console.error('plan refresh failed', err);
@@ -909,11 +937,24 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
         // تب‌ها
         const tabs = document.querySelectorAll('.tabbar button');
+
+        function showInlineNotice(message) {
+          const msgEl = document.getElementById('plan-status-msg');
+          if (msgEl) {
+            msgEl.classList.add('error');
+            msgEl.textContent = message;
+          }
+        }
+
+        /**
+         * @param {string|null|undefined} id
+         */
         async function showTab(id){
           if (!id) return;
           const trigger = Array.from(tabs).find(b => b.dataset.tab === id);
           if (trigger && trigger.classList.contains('feature-locked')) {
-            alert('برای دسترسی به این بخش باید پلن مناسب فعال باشد.');
+            await showTab('tab-plans');
+            showInlineNotice('برای دسترسی به این بخش باید پلن مناسب فعال باشد.');
             return;
           }
           const target = document.getElementById(id);
