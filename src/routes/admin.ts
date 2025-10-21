@@ -88,7 +88,8 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
   if (p === "/admin") {
     const body = `
       <style>
-        .tabbar button{margin:0 4px;padding:6px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer}
+        .tabbar button,
+        .tabbar a{margin:0 4px;padding:6px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;display:inline-flex;align-items:center;text-decoration:none;color:inherit}
         .tabbar button.active{background:#222;color:#fff;border-color:#222}
         .tabsec{display:none}
       </style>
@@ -99,6 +100,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         <button data-tab="tab-talifi">ایجاد تست تالیفی</button>
         <button data-tab="tab-qa">ایجاد پرسش و پاسخ</button>
         <button data-tab="tab-manage">مدیریت سوالات</button>
+        <a href="/admin/taxonomy">مدیریت طبقه‌بندی</a>
       </div>
 
       <!-- تب کنکور -->
