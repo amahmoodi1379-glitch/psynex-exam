@@ -572,9 +572,9 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             </select>
           </div>
           <div><label>رشته (الزامی)</label> <select id="major" required></select></div>
-          <div><label>مقطع</label> <select id="degree"></select></div>
-          <div><label>وزارتخانه</label> <select id="ministry"></select></div>
-          <div><label>سال کنکور</label> <select id="examYear"></select></div>
+          <div data-konkur-only><label>مقطع</label> <select id="degree"></select></div>
+          <div data-konkur-only><label>وزارتخانه</label> <select id="ministry"></select></div>
+          <div data-konkur-only><label>سال کنکور</label> <select id="examYear"></select></div>
           <div><label>درس</label> <select id="course"></select></div>
           <div><label>منبع</label> <select id="source"></select></div>
           <div><label>فصل</label> <select id="chapter"></select></div>
@@ -825,6 +825,23 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           });
         }
 
+        function updateSingleKonkurFields() {
+          const typeEl = document.getElementById("type");
+          const typeValue = typeEl && "value" in typeEl ? typeEl.value : "";
+          const isKonkur = typeValue === "konkur";
+          document.querySelectorAll('#tab-single [data-konkur-only]').forEach(node => {
+            if (!(node instanceof HTMLElement)) return;
+            node.style.display = isKonkur ? "" : "none";
+            const select = node.querySelector("select");
+            if (select instanceof HTMLSelectElement) {
+              select.disabled = !isKonkur;
+              if (!isKonkur) {
+                select.value = "";
+              }
+            }
+          });
+        }
+
         function seenAdd(id) {
           const k="seenIds"; const s = sessionStorage.getItem(k);
           const arr = s? JSON.parse(s): [];
@@ -838,15 +855,29 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         }
 
         function currentFiltersSingle(){
-          return {
-            majorId: $("#major").value || undefined,
-            degreeId: $("#degree").value || undefined,
-            ministryId: $("#ministry").value || undefined,
-            examYearId: $("#examYear").value || undefined,
-            courseId: $("#course").value || undefined,
-            sourceId: $("#source").value || undefined,
-            chapterId: $("#chapter").value || undefined
+          const getValue = (id) => {
+            const node = document.getElementById(id);
+            if (!node || !("value" in node)) return undefined;
+            const val = node.value;
+            return val ? val : undefined;
           };
+          const typeEl = document.getElementById("type");
+          const typeValue = typeEl && "value" in typeEl ? typeEl.value : "";
+          const filters = {
+            majorId: getValue("major"),
+            courseId: getValue("course"),
+            sourceId: getValue("source"),
+            chapterId: getValue("chapter"),
+          };
+          if (typeValue === "konkur") {
+            const degreeId = getValue("degree");
+            const ministryId = getValue("ministry");
+            const examYearId = getValue("examYear");
+            if (degreeId) filters.degreeId = degreeId;
+            if (ministryId) filters.ministryId = ministryId;
+            if (examYearId) filters.examYearId = examYearId;
+          }
+          return filters;
         }
         function currentFiltersChallenge(){
           const valueOf = (id) => {
@@ -865,16 +896,13 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
         async function fetchRandom() {
           const type = $("#type").value;
-          const majorId = $("#major").value;
+          const filters = currentFiltersSingle();
+          const majorId = filters.majorId;
           if (!majorId) { alert("رشته را انتخاب کن."); return; }
-          const params = new URLSearchParams({
-            type, majorId,
-            degreeId: $("#degree").value,
-            ministryId: $("#ministry").value,
-            examYearId: $("#examYear").value,
-            courseId: $("#course").value,
-            sourceId: $("#source").value,
-            chapterId: $("#chapter").value
+          const params = new URLSearchParams({ type, majorId });
+          Object.entries(filters).forEach(([key, value]) => {
+            if (key === "majorId") return;
+            if (value) params.set(key, value);
           });
           const r = await fetch("/api/student/random?"+params.toString());
           const d = await r.json();
@@ -1507,6 +1535,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         // رویدادها
         const singleFetchBtn = document.getElementById("fetchBtn");
         if (singleFetchBtn) singleFetchBtn.addEventListener("click", fetchRandom);
+        const typeSelectSingle = document.getElementById("type");
+        if (typeSelectSingle) typeSelectSingle.addEventListener("change", updateSingleKonkurFields);
         const challengeFetchBtn = document.getElementById("cfetchBtn");
         if (challengeFetchBtn) challengeFetchBtn.addEventListener("click", fetchChallenge);
         const qaSearchBtn = document.getElementById("qa-search");
@@ -1532,6 +1562,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
         async function initAll(){
           await initCascadesSingle();
+          updateSingleKonkurFields();
           if (document.getElementById("cmajor")) { await initCascadesChallenge(); }
           await initCascadesQA();
           await initCascadesExam();
