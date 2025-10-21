@@ -76,6 +76,23 @@ type StudentContext = {
   plan: PlanDefinition & { tier: PlanTier };
 };
 
+type PlanUsageSummary = {
+  action: string;
+  label: string;
+  remaining: number | null;
+  limit: number | null;
+};
+
+type PlanMeta = {
+  planTier: PlanTier;
+  planExpiresAt: number | null;
+  dailyLimits: PlanDefinition["dailyLimits"] | null;
+  featureFlags: PlanDefinition["featureFlags"] | null;
+  usage: PlanUsageSummary[];
+  talifiExamMaxQuestions: number | null;
+  statsAccess: boolean;
+};
+
 function resolvePlanDefinition(tier: string | null | undefined): (PlanDefinition & { tier: PlanTier }) {
   const plan = getPlanDefinition(tier);
   if (plan) return plan;
@@ -84,6 +101,43 @@ function resolvePlanDefinition(tier: string | null | undefined): (PlanDefinition
     throw new Error("missing free plan definition");
   }
   return fallback;
+}
+
+async function buildPlanMeta(env: any, ctx: StudentContext): Promise<PlanMeta> {
+  const { session, plan } = ctx;
+  const usageDescriptors = describeUsageForPlan(plan);
+  let usageSummary: PlanUsageSummary[] = [];
+  if (env?.DATA && usageDescriptors.length) {
+    const snapshots = await getUsageSnapshots(
+      env,
+      session.email,
+      usageDescriptors.map((d) => ({ action: d.action, limit: d.limit })),
+    );
+    usageSummary = usageDescriptors
+      .map((desc, idx) => {
+        const snap = snapshots[idx];
+        const limit = snap?.limit ?? (desc.limit ?? null);
+        return {
+          action: desc.action,
+          label: desc.label,
+          limit,
+          remaining: snap?.remaining ?? (typeof limit === "number" ? Math.max(0, limit) : null),
+        };
+      })
+      .filter((it) => it.limit != null);
+  }
+
+  const tier = session.planTier ?? plan.tier;
+
+  return {
+    planTier: tier,
+    planExpiresAt: session?.planExpiresAt ?? null,
+    dailyLimits: plan.dailyLimits ?? null,
+    featureFlags: plan.featureFlags ?? null,
+    usage: usageSummary,
+    talifiExamMaxQuestions: plan.usageLimits?.exams.byMode.talifi?.maxQuestions ?? null,
+    statsAccess: !!plan.usageLimits?.statsAccess,
+  };
 }
 
 async function requireStudentContext(req: Request, env: any, opts?: { respondJson?: boolean }): Promise<StudentContext | Response> {
@@ -429,6 +483,15 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
     })();
   }
 
+  if (p === "/api/student/plan" && req.method === "GET") {
+    return (async () => {
+      const ctx = await requireStudentContext(req, env, { respondJson: true });
+      if (ctx instanceof Response) return ctx;
+      const meta = await buildPlanMeta(env, ctx);
+      return json({ ok: true, data: meta });
+    })();
+  }
+
   // --- صفحه دانشجو (۵ تب + پاسخنامه) ---
   if (p === "/student") {
     return (async () => {
@@ -449,21 +512,6 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         aiCoach: "دستیار هوشمند",
       } as const;
       const fmt = new Intl.NumberFormat("fa-IR");
-      const usageDescriptors = describeUsageForPlan(ctx.plan);
-      let usageSummary: { action: string; label: string; remaining: number | null; limit: number | null }[] = [];
-      if (env.DATA && usageDescriptors.length) {
-        const snapshots = await getUsageSnapshots(env, me.email, usageDescriptors.map(d => ({ action: d.action, limit: d.limit })));
-        usageSummary = usageDescriptors.map((desc, idx) => {
-          const snap = snapshots[idx];
-          const limit = snap?.limit ?? (desc.limit ?? null);
-          return {
-            action: desc.action,
-            label: desc.label,
-            limit,
-            remaining: snap?.remaining ?? (typeof limit === "number" ? Math.max(0, limit) : null),
-          };
-        }).filter(it => it.limit !== null && it.limit !== undefined);
-      }
       const planCards = planCatalog.filter(plan => plan.tier !== "free").map(plan => {
         const featureItems = plan.features.map(f => `<li>${f}</li>`).join("");
         const tags = Object.entries(plan.featureFlags)
@@ -495,21 +543,17 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         </div>
         `;
       }).join("");
-      const planMeta = {
-        planTier: me.planTier ?? "free",
-        planExpiresAt: me?.planExpiresAt ?? null,
-        dailyLimits: ctx.plan.dailyLimits ?? null,
-        featureFlags: ctx.plan.featureFlags ?? null,
-        usage: usageSummary,
-        talifiExamMaxQuestions: ctx.plan.usageLimits?.exams.byMode.talifi?.maxQuestions ?? null,
-      };
-      const showChallengeTab = !!ctx.plan.featureFlags?.challengeHub;
+      const planMeta = await buildPlanMeta(env, ctx);
+      const showChallengeTab = !!planMeta.featureFlags?.challengeHub;
+      const showQaTab = !!planMeta.featureFlags?.qaBank;
+      const showStatsTab = !!planMeta.statsAccess;
 
       const body = `
       <style>
         .tabbar button{margin:0 4px;padding:6px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer}
         .tabbar button.active{background:#222;color:#fff;border-color:#222}
         .tabsec{display:none}
+        .tabbar button.feature-locked,.tabsec.feature-locked{display:none}
         .bars{display:flex;align-items:flex-end;gap:2px;height:120px;border-bottom:1px solid #eee;margin-top:8px}
         .bar{width:6px;background:#888}
         .muted{color:#666}
@@ -561,9 +605,9 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       </header>
       <div class="tabbar">
         <button data-tab="tab-single" class="active">تک‌سؤال‌ها</button>
-        ${showChallengeTab ? `<button data-tab="tab-challenges">چالش‌ها</button>` : ``}
-        <button data-tab="tab-qa">پرسش‌های تشریحی</button>
-        <button data-tab="tab-stats">آمار</button>
+        <button data-tab="tab-challenges" data-requires-feature="challengeHub" class="${showChallengeTab ? "" : "feature-locked"}">چالش‌ها</button>
+        <button data-tab="tab-qa" data-requires-feature="qaBank" class="${showQaTab ? "" : "feature-locked"}">پرسش‌های تشریحی</button>
+        <button data-tab="tab-stats" data-requires-feature="statsAccess" class="${showStatsTab ? "" : "feature-locked"}">آمار</button>
         <button data-tab="tab-exam">آزمون</button>
         <button data-tab="tab-plans">اشتراک</button>
       </div>
@@ -605,9 +649,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         </div>
       </div>
 
-      ${showChallengeTab ? `
       <!-- چالش‌ها -->
-      <div class="card tabsec" id="tab-challenges">
+      <div class="card tabsec${showChallengeTab ? "" : " feature-locked"}" id="tab-challenges" data-requires-feature="challengeHub">
         <b>سؤال‌های چالشی (سؤال‌هایی که قبلاً غلط زده‌ای)</b>
         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:end">
           <div><label>نوع</label>
@@ -638,10 +681,10 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           <div id="cresult" style="margin-top:10px" class="muted"></div>
           <button id="cnextBtn" style="margin-top:8px">چالشی بعدی</button>
         </div>
-      </div>` : ``}
+      </div>
 
       <!-- پرسش‌های تشریحی -->
-      <div class="card tabsec" id="tab-qa">
+      <div class="card tabsec${showQaTab ? "" : " feature-locked"}" id="tab-qa" data-requires-feature="qaBank">
         <b>پرسش‌های تشریحی</b>
         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:end">
           <div><label>رشته (الزامی)</label> <select id="qmajor" required></select></div>
@@ -655,7 +698,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       </div>
 
       <!-- آمار -->
-      <div class="card tabsec" id="tab-stats">
+      <div class="card tabsec${showStatsTab ? "" : " feature-locked"}" id="tab-stats" data-requires-feature="statsAccess">
         <b>آمار پاسخ‌ها</b>
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
           <label>بازه:</label>
@@ -735,13 +778,133 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         const planCatalog = planCatalogEl ? JSON.parse(planCatalogEl.textContent || '[]') : [];
         if (planCatalogEl) planCatalogEl.remove();
         const planMetaEl = document.getElementById('plan-meta');
-        const planMeta = planMetaEl ? JSON.parse(planMetaEl.textContent || '{}') : {};
+
+        /**
+         * @typedef {Object} PlanUsageSummary
+         * @property {string} action
+         * @property {string} label
+         * @property {?number} remaining
+         * @property {?number} limit
+         */
+
+        /**
+         * @typedef {Object} PlanMeta
+         * @property {string} planTier
+         * @property {?number} planExpiresAt
+         * @property {?Object} dailyLimits
+         * @property {?Object} featureFlags
+         * @property {PlanUsageSummary[]} usage
+         * @property {?number} talifiExamMaxQuestions
+         * @property {boolean} statsAccess
+         */
+
+        /** @type {PlanMeta|null} */
+        let planMeta = planMetaEl ? JSON.parse(planMetaEl.textContent || '{}') : null;
         if (planMetaEl) planMetaEl.remove();
         const planByTier = {};
         for (const p of planCatalog) planByTier[p.tier] = p;
         const flagLabelMap = ${JSON.stringify(featureFlagLabels)};
         const priceFmt = new Intl.NumberFormat('fa-IR');
         window.PSX_PLANS = { catalog: planCatalog, meta: planMeta };
+
+        function updateFeatureVisibility() {
+          const requirements = {
+            challengeHub: !!planMeta?.featureFlags?.challengeHub,
+            qaBank: !!planMeta?.featureFlags?.qaBank,
+            statsAccess: !!planMeta?.statsAccess,
+          };
+          Object.entries(requirements).forEach(([feature, enabled]) => {
+            document.querySelectorAll('[data-requires-feature="' + feature + '"]').forEach(node => {
+              if (!(node instanceof HTMLElement)) return;
+              node.classList.toggle('feature-locked', !enabled);
+            });
+          });
+          const activeButton = document.querySelector('.tabbar button.active');
+          if (activeButton && activeButton.dataset.tab) {
+            const currentTab = document.getElementById(activeButton.dataset.tab);
+            if (currentTab && currentTab.classList.contains('feature-locked')) {
+              showTab('tab-single');
+            }
+          }
+        }
+
+        updateFeatureVisibility();
+
+        /** @typedef {{ silent?: boolean }} RefreshPlanMetaOptions */
+
+        /** @type {Promise<PlanMeta|null>|null} */
+        let planMetaRequest = null;
+
+        /**
+         * @param {RefreshPlanMetaOptions | undefined} options
+         * @returns {Promise<PlanMeta|null>}
+         */
+        async function refreshPlanMeta(options) {
+          const { silent = false } = options ?? {};
+          if (planMetaRequest) return planMetaRequest;
+          const statusMsgEl = document.getElementById('plan-status-msg');
+          if (!silent && statusMsgEl) {
+            statusMsgEl.classList.remove('error');
+            statusMsgEl.textContent = 'در حال بروزرسانی پلن...';
+          }
+          planMetaRequest = (async () => {
+            try {
+              const res = await fetch('/api/student/plan', { headers: { accept: 'application/json' } });
+              let body = null;
+              try {
+                body = await res.json();
+              } catch {
+                body = null;
+              }
+              if (!res.ok || !body?.ok) {
+                const msg = body?.error || body?.message || res.statusText || 'خطای نامشخص';
+                throw new Error(msg);
+              }
+              planMeta = body.data || null;
+              window.PSX_PLANS.meta = planMeta;
+              updateFeatureVisibility();
+              renderPlanStatus();
+              if (!silent && statusMsgEl) {
+                statusMsgEl.textContent = '';
+              }
+              return planMeta;
+            } catch (err) {
+              if (!silent && statusMsgEl) {
+                statusMsgEl.classList.add('error');
+                const message = err instanceof Error ? err.message : String(err);
+                statusMsgEl.textContent = 'خطا در بروزرسانی پلن: ' + message;
+              } else {
+                console.error('plan refresh failed', err);
+              }
+              throw err;
+            } finally {
+              planMetaRequest = null;
+            }
+          })();
+          return planMetaRequest;
+        }
+
+        const BILLING_REFRESH_KEY = 'psx_billing_refresh';
+
+        function expectBillingReturn() {
+          try {
+            sessionStorage.setItem(BILLING_REFRESH_KEY, '1');
+          } catch (err) {
+            console.warn('billing flag set failed', err);
+          }
+        }
+
+        function maybeRefreshPlanAfterBilling(silent = true) {
+          try {
+            const flag = sessionStorage.getItem(BILLING_REFRESH_KEY);
+            if (flag === '1') {
+              sessionStorage.removeItem(BILLING_REFRESH_KEY);
+              refreshPlanMeta({ silent }).catch(err => console.error('plan refresh after billing failed', err));
+            }
+          } catch (err) {
+            console.error('billing flag read failed', err);
+          }
+        }
 
         function applyQuotaUpdate(quota) {
           if (!planMeta || !quota) return;
@@ -768,20 +931,52 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
               }
             }
           }
+          window.PSX_PLANS.meta = planMeta;
           renderPlanStatus();
         }
 
         // تب‌ها
         const tabs = document.querySelectorAll('.tabbar button');
-        function showTab(id){
+
+        function showInlineNotice(message) {
+          const msgEl = document.getElementById('plan-status-msg');
+          if (msgEl) {
+            msgEl.classList.add('error');
+            msgEl.textContent = message;
+          }
+        }
+
+        /**
+         * @param {string | null | undefined} id
+         * @returns {Promise<void>}
+         */
+        async function showTab(id) {
+          if (!id) return;
+          const trigger = Array.from(tabs).find(b => b.dataset.tab === id);
+          if (trigger && trigger.classList.contains('feature-locked')) {
+            await showTab('tab-plans');
+            showInlineNotice('برای دسترسی به این بخش باید پلن مناسب فعال باشد.');
+            return;
+          }
           const target = document.getElementById(id);
           if (!target) return;
+          if (target.classList.contains('feature-locked')) {
+            if (id !== 'tab-single') showTab('tab-single');
+            return;
+          }
+          if (id === 'tab-plans') {
+            try {
+              await refreshPlanMeta({ silent: false });
+            } catch (err) {
+              console.error(err);
+            }
+          }
           document.querySelectorAll('.tabsec').forEach(el=>{ if (el) el.style.display='none'; });
           target.style.display='block';
           tabs.forEach(b=>b.classList.toggle('active', b.dataset.tab===id));
           location.hash = id;
         }
-        tabs.forEach(b=>b.addEventListener('click', ()=>showTab(b.dataset.tab)));
+        tabs.forEach(b=>b.addEventListener('click', () => { showTab(b.dataset.tab); }));
         if (location.hash && document.getElementById(location.hash.slice(1))) showTab(location.hash.slice(1));
 
         // clientId دائمی
@@ -1524,6 +1719,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
                   const msg = data.error || 'خطا در ایجاد تراکنش';
                   throw new Error(msg);
                 }
+                expectBillingReturn();
                 location.href = data.payUrl;
               } catch (err) {
                 btn.disabled = false;
@@ -1538,6 +1734,12 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
               }
             });
           });
+          const handleBillingReturn = () => maybeRefreshPlanAfterBilling(true);
+          window.addEventListener('focus', handleBillingReturn);
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') handleBillingReturn();
+          });
+          handleBillingReturn();
         }
 
         // رویدادها
