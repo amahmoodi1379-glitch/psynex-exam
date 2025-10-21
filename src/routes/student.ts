@@ -836,11 +836,11 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         let planMetaRequest = null;
 
         /**
-         * @param {RefreshPlanMetaOptions} [options]
+         * @param {RefreshPlanMetaOptions | undefined} options
          * @returns {Promise<PlanMeta|null>}
          */
-        async function refreshPlanMeta(options = {}) {
-          const { silent = false } = options;
+        async function refreshPlanMeta(options) {
+          const { silent = false } = options ?? {};
           if (planMetaRequest) return planMetaRequest;
           const statusMsgEl = document.getElementById('plan-status-msg');
           if (!silent && statusMsgEl) {
@@ -947,9 +947,10 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         }
 
         /**
-         * @param {string|null|undefined} id
+         * @param {string | null | undefined} id
+         * @returns {Promise<void>}
          */
-        async function showTab(id){
+        async function showTab(id) {
           if (!id) return;
           const trigger = Array.from(tabs).find(b => b.dataset.tab === id);
           if (trigger && trigger.classList.contains('feature-locked')) {
