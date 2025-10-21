@@ -236,25 +236,29 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
             return;
           }
 
-          const upd = async () => {
-            const majorId = majorEl.value || "";
-            await fillSelect(rootId+"-course", "/api/taxonomy/courses?majorId=" + majorId);
-            const courseId = courseEl.value || "";
-            await fillSelect(rootId+"-source", "/api/taxonomy/sources?courseId=" + courseId);
+          const updateChapters = async () => {
             const sourceId = sourceEl.value || "";
             await fillSelect(rootId+"-chapter", "/api/taxonomy/chapters?sourceId=" + sourceId);
           };
-          majorEl.addEventListener("change", upd);
-          courseEl.addEventListener("change", async () => {
+
+          const updateSources = async () => {
             const courseId = courseEl.value || "";
             await fillSelect(rootId+"-source", "/api/taxonomy/sources?courseId=" + courseId);
-          });
-          sourceEl.addEventListener("change", async () => {
-            const sourceId = sourceEl.value || "";
-            await fillSelect(rootId+"-chapter", "/api/taxonomy/chapters?sourceId=" + sourceId);
-          });
+            await updateChapters();
+          };
+
+          const updateCourses = async () => {
+            const majorId = majorEl.value || "";
+            await fillSelect(rootId+"-course", "/api/taxonomy/courses?majorId=" + majorId);
+            await updateSources();
+          };
+
+          majorEl.addEventListener("change", updateCourses);
+          courseEl.addEventListener("change", updateSources);
+          sourceEl.addEventListener("change", updateChapters);
+
           await new Promise(r => setTimeout(r, 120));
-          await upd();
+          await updateCourses();
         }
         function wireForm(formId, echoId) {
           const form = document.getElementById(formId);
