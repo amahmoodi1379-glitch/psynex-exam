@@ -514,6 +514,11 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         .bar{width:6px;background:#888}
         .muted{color:#666}
         .hide{display:none}
+        .dashboard-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+        .dashboard-header h1{margin:0}
+        .logout-link{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;border:1px solid #ddd;background:#f7f7f7;color:#222;text-decoration:none;font-weight:600;transition:background .15s ease,color .15s ease,box-shadow .15s ease}
+        .logout-link:hover{background:#ececec;color:#000}
+        .logout-link:focus-visible{outline:3px solid #0b5ed7;outline-offset:2px;box-shadow:0 0 0 2px rgba(11,94,215,0.2)}
         .plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:12px}
         .plan-card{position:relative;border:1px solid #e1e1e1;border-radius:16px;padding:20px;background:#fff;display:flex;flex-direction:column;gap:10px;box-shadow:0 8px 18px rgba(0,0,0,0.05);transition:transform .15s ease, box-shadow .15s ease}
         .plan-card:hover{transform:translateY(-4px);box-shadow:0 12px 24px rgba(0,0,0,0.08)}
@@ -550,7 +555,10 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
       <script id="plan-catalog" type="application/json">${JSON.stringify(planCatalog)}</script>
       <script id="plan-meta" type="application/json">${JSON.stringify(planMeta)}</script>
 
-      <h1>صفحه دانشجو</h1>
+      <header class="dashboard-header" role="banner">
+        <h1>صفحه دانشجو</h1>
+        <a class="logout-link" href="/logout">خروج از حساب</a>
+      </header>
       <div class="tabbar">
         <button data-tab="tab-single" class="active">تک‌سؤال‌ها</button>
         ${showChallengeTab ? `<button data-tab="tab-challenges">چالش‌ها</button>` : ``}
