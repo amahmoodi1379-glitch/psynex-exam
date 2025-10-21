@@ -197,6 +197,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         // helpers
         async function fillSelect(id, url, valueKey = "id", labelKey = "name", selectedValue) {
           const el = document.getElementById(id);
+          if (!(el instanceof HTMLSelectElement)) return;
           el.innerHTML = "";
           const res = await fetch(url);
           const items = await res.json();
@@ -227,21 +228,29 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
           await fillSelect(rootId+"-ministry", "/api/taxonomy/ministries");
           await fillSelect(rootId+"-examYear", "/api/taxonomy/exam-years");
 
+          const majorEl = document.getElementById(rootId+"-major");
+          const courseEl = document.getElementById(rootId+"-course");
+          const sourceEl = document.getElementById(rootId+"-source");
+          const chapterEl = document.getElementById(rootId+"-chapter");
+          if (!(majorEl instanceof HTMLSelectElement) || !(courseEl instanceof HTMLSelectElement) || !(sourceEl instanceof HTMLSelectElement) || !(chapterEl instanceof HTMLSelectElement)) {
+            return;
+          }
+
           const upd = async () => {
-            const majorId = document.getElementById(rootId+"-major").value;
+            const majorId = majorEl.value || "";
             await fillSelect(rootId+"-course", "/api/taxonomy/courses?majorId=" + majorId);
-            const courseId = document.getElementById(rootId+"-course").value;
+            const courseId = courseEl.value || "";
             await fillSelect(rootId+"-source", "/api/taxonomy/sources?courseId=" + courseId);
-            const sourceId = document.getElementById(rootId+"-source").value;
+            const sourceId = sourceEl.value || "";
             await fillSelect(rootId+"-chapter", "/api/taxonomy/chapters?sourceId=" + sourceId);
           };
-          document.getElementById(rootId+"-major").addEventListener("change", upd);
-          document.getElementById(rootId+"-course").addEventListener("change", async () => {
-            const courseId = document.getElementById(rootId+"-course").value;
+          majorEl.addEventListener("change", upd);
+          courseEl.addEventListener("change", async () => {
+            const courseId = courseEl.value || "";
             await fillSelect(rootId+"-source", "/api/taxonomy/sources?courseId=" + courseId);
           });
-          document.getElementById(rootId+"-source").addEventListener("change", async () => {
-            const sourceId = document.getElementById(rootId+"-source").value;
+          sourceEl.addEventListener("change", async () => {
+            const sourceId = sourceEl.value || "";
             await fillSelect(rootId+"-chapter", "/api/taxonomy/chapters?sourceId=" + sourceId);
           });
           await new Promise(r => setTimeout(r, 120));
@@ -442,9 +451,11 @@ function formToQuestionPayload(fd: FormData, type: QuestionType): Omit<Question,
     stem: String(fd.get("stem") || ""),
   };
 
-  payload.degreeId = optionalField(fd, "degreeId");
-  payload.ministryId = optionalField(fd, "ministryId");
-  payload.examYearId = optionalField(fd, "examYearId");
+  if (type === "konkur") {
+    payload.degreeId = optionalField(fd, "degreeId");
+    payload.ministryId = optionalField(fd, "ministryId");
+    payload.examYearId = optionalField(fd, "examYearId");
+  }
   payload.sourceId = optionalField(fd, "sourceId");
   payload.chapterId = optionalField(fd, "chapterId");
   payload.expl = optionalField(fd, "expl");
@@ -464,12 +475,15 @@ function formToQuestionPayload(fd: FormData, type: QuestionType): Omit<Question,
 
 // فرم‌ساز
 function formHtml(action: string, withOptions: boolean, root: "k"|"t"|"q") {
-  return `
-  <form id="form-${root}" method="post" action="${action}">
-    <div><label>رشته</label> <select id="${root}-major" name="majorId" required></select></div>
+  const konkurMeta = root === "k" ? `
     <div><label>مقطع</label> <select id="${root}-degree" name="degreeId"></select></div>
     <div><label>وزارتخانه</label> <select id="${root}-ministry" name="ministryId"></select></div>
     <div><label>سال کنکور</label> <select id="${root}-examYear" name="examYearId"></select></div>
+  ` : "";
+  return `
+  <form id="form-${root}" method="post" action="${action}">
+    <div><label>رشته</label> <select id="${root}-major" name="majorId" required></select></div>
+    ${konkurMeta}
     <div><label>درس</label> <select id="${root}-course" name="courseId" required></select></div>
     <div><label>منبع</label> <select id="${root}-source" name="sourceId"></select></div>
     <div><label>فصل</label> <select id="${root}-chapter" name="chapterId"></select></div>
