@@ -595,6 +595,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         #plan-status .plan-meta-usage span strong{font-weight:600}
         #plan-status-msg{font-size:13px;margin-top:4px}
         #plan-status-msg.error{color:#b3261e;font-weight:600}
+        .qa-redirect-link{background:none;border:none;padding:0;margin:0 4px;color:#0b5ed7;text-decoration:underline;cursor:pointer;font:inherit}
       </style>
 
       <script id="plan-catalog" type="application/json">${JSON.stringify(planCatalog)}</script>
@@ -636,7 +637,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         ${showQaTab ? `
         <div class="muted" id="qa-redirect-note" style="margin-top:6px">
           برای مشاهده پرسش‌های تشریحی به تب
-          <button type="button" id="qa-redirect-btn" style="background:none;border:none;padding:0;margin:0 4px;color:#0b5ed7;text-decoration:underline;cursor:pointer;font:inherit">پرسش‌های تشریحی</button>
+          <button type="button" id="qa-redirect-btn" class="qa-redirect-link">پرسش‌های تشریحی</button>
           برو.
         </div>
         ` : ""}
@@ -1017,6 +1018,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           }
         }
 
+        const ALLOWED_SINGLE_TYPES = ["konkur", "talifi"];
+
         function canUseQaTab() {
           return !!planMeta?.featureFlags?.qaBank;
         }
@@ -1025,31 +1028,23 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           const btn = document.createElement("button");
           btn.type = "button";
           btn.textContent = "پرسش‌های تشریحی";
-          btn.style.background = "none";
-          btn.style.border = "none";
-          btn.style.padding = "0";
-          btn.style.margin = "0";
-          btn.style.color = "#0b5ed7";
-          btn.style.textDecoration = "underline";
-          btn.style.cursor = "pointer";
-          btn.style.font = "inherit";
+          btn.className = "qa-redirect-link";
           btn.addEventListener("click", () => showTab("tab-qa"));
           return btn;
         }
 
         function resolveSingleQuestionType() {
-          const allowed = ["konkur", "talifi"];
           const typeEl = document.getElementById("type");
           if (typeEl instanceof HTMLSelectElement) {
             const value = typeEl.value;
-            if (allowed.includes(value)) {
+            if (ALLOWED_SINGLE_TYPES.includes(value)) {
               return value;
             }
-            const fallback = allowed[0];
+            const fallback = ALLOWED_SINGLE_TYPES[0];
             typeEl.value = fallback;
             return fallback;
           }
-          return allowed[0];
+          return ALLOWED_SINGLE_TYPES[0];
         }
 
         // ---------- تک‌سؤال‌ها ----------
@@ -1210,9 +1205,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             const note = document.createElement("div");
             note.className = "muted";
             if (canUseQaTab()) {
-              note.appendChild(document.createTextNode("این پرسش تشریحی است. برای مشاهده پاسخ به تب "));
-              note.appendChild(createQaRedirectButton());
-              note.appendChild(document.createTextNode(" برو."));
+              note.append("این پرسش تشریحی است. برای مشاهده پاسخ به تب ", createQaRedirectButton(), " برو.");
             } else {
               note.textContent = "این پرسش گزینه‌ای ندارد و پاسخ تشریحی در این بخش در دسترس نیست.";
             }
