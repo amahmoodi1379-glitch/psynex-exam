@@ -629,8 +629,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           <div data-konkur-only><label>وزارتخانه</label> <select id="ministry"></select></div>
           <div data-konkur-only><label>سال کنکور</label> <select id="examYear"></select></div>
           <div><label>درس</label> <select id="course"></select></div>
-          <div><label>منبع</label> <select id="source"></select></div>
-          <div><label>فصل</label> <select id="chapter"></select></div>
+          <div data-talifi-only><label>منبع</label> <select id="source"></select></div>
+          <div data-talifi-only><label>فصل</label> <select id="chapter"></select></div>
           <button id="fetchBtn">یافتن سؤال</button>
         </div>
 
@@ -1052,17 +1052,22 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           const typeEl = document.getElementById("type");
           const typeValue = typeEl && "value" in typeEl ? typeEl.value : "";
           const isKonkur = typeValue === "konkur";
-          document.querySelectorAll('#tab-single [data-konkur-only]').forEach(node => {
-            if (!(node instanceof HTMLElement)) return;
-            node.style.display = isKonkur ? "" : "none";
-            const select = node.querySelector("select");
-            if (select instanceof HTMLSelectElement) {
-              select.disabled = !isKonkur;
-              if (!isKonkur) {
-                select.value = "";
+          const toggleNodes = (selector, shouldShow) => {
+            document.querySelectorAll(selector).forEach((node) => {
+              if (!(node instanceof HTMLElement)) return;
+              node.style.display = shouldShow ? "" : "none";
+              const select = node.querySelector("select");
+              if (select instanceof HTMLSelectElement) {
+                select.disabled = !shouldShow;
+                if (!shouldShow) {
+                  select.value = "";
+                }
               }
-            }
-          });
+            });
+          };
+
+          toggleNodes('#tab-single [data-konkur-only]', isKonkur);
+          toggleNodes('#tab-single [data-talifi-only]', !isKonkur);
         }
 
         function seenAdd(id) {
@@ -1086,13 +1091,18 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           };
           const typeEl = document.getElementById("type");
           const typeValue = typeEl && "value" in typeEl ? typeEl.value : "";
+          const isKonkur = typeValue === "konkur";
           const filters = {
             majorId: getValue("major"),
             courseId: getValue("course"),
-            sourceId: getValue("source"),
-            chapterId: getValue("chapter"),
           };
-          if (typeValue === "konkur") {
+          if (!isKonkur) {
+            const sourceId = getValue("source");
+            const chapterId = getValue("chapter");
+            if (sourceId) filters.sourceId = sourceId;
+            if (chapterId) filters.chapterId = chapterId;
+          }
+          if (isKonkur) {
             const degreeId = getValue("degree");
             const ministryId = getValue("ministry");
             const examYearId = getValue("examYear");
