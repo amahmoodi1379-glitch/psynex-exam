@@ -242,13 +242,20 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
 
           const majorEl = document.getElementById(rootId+"-major");
           const courseEl = document.getElementById(rootId+"-course");
-          const sourceEl = document.getElementById(rootId+"-source");
-          const chapterEl = document.getElementById(rootId+"-chapter");
-          if (!(majorEl instanceof HTMLSelectElement) || !(courseEl instanceof HTMLSelectElement) || !(sourceEl instanceof HTMLSelectElement) || !(chapterEl instanceof HTMLSelectElement)) {
+          const sourceEl = (() => {
+            const el = document.getElementById(rootId+"-source");
+            return el instanceof HTMLSelectElement ? el : null;
+          })();
+          const chapterEl = (() => {
+            const el = document.getElementById(rootId+"-chapter");
+            return el instanceof HTMLSelectElement ? el : null;
+          })();
+          if (!(majorEl instanceof HTMLSelectElement) || !(courseEl instanceof HTMLSelectElement)) {
             return;
           }
 
           const updateChapters = async () => {
+            if (!sourceEl || !chapterEl) return;
             const sourceId = sourceEl.value || "";
             if (!sourceId) {
               resetSelectOptions(chapterEl);
@@ -258,6 +265,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
           };
 
           const updateSources = async () => {
+            if (!sourceEl) return;
             const courseId = courseEl.value || "";
             await fillSelect(rootId+"-source", "/api/taxonomy/sources?courseId=" + courseId);
             await updateChapters();
@@ -271,7 +279,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
 
           majorEl.addEventListener("change", updateCourses);
           courseEl.addEventListener("change", updateSources);
-          sourceEl.addEventListener("change", updateChapters);
+          sourceEl?.addEventListener("change", updateChapters);
 
           await new Promise(r => setTimeout(r, 120));
           await updateCourses();
@@ -500,13 +508,16 @@ function formHtml(action: string, withOptions: boolean, root: "k"|"t"|"q") {
     <div><label>وزارتخانه</label> <select id="${root}-ministry" name="ministryId"></select></div>
     <div><label>سال کنکور</label> <select id="${root}-examYear" name="examYearId"></select></div>
   ` : "";
+  const optionalSourceChapter = root === "k" ? "" : `
+    <div><label>منبع</label> <select id="${root}-source" name="sourceId"></select></div>
+    <div><label>فصل</label> <select id="${root}-chapter" name="chapterId"></select></div>
+  `;
   return `
   <form id="form-${root}" method="post" action="${action}">
     <div><label>رشته</label> <select id="${root}-major" name="majorId" required></select></div>
     ${konkurMeta}
     <div><label>درس</label> <select id="${root}-course" name="courseId" required></select></div>
-    <div><label>منبع</label> <select id="${root}-source" name="sourceId"></select></div>
-    <div><label>فصل</label> <select id="${root}-chapter" name="chapterId"></select></div>
+    ${optionalSourceChapter}
 
     <div><label>صورت سوال</label><br><textarea name="stem" required rows="3" style="width:100%"></textarea></div>
     ${withOptions ? `
