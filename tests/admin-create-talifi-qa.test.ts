@@ -60,7 +60,7 @@ async function run() {
   konkurForm.set("optB", "B1");
   konkurForm.set("optC", "C1");
   konkurForm.set("optD", "D1");
-  konkurForm.set("correctLabel", "A");
+  konkurForm.set("correctLabel", "1");
   konkurForm.set("degreeId", "deg1");
   konkurForm.set("ministryId", "min1");
   konkurForm.set("examYearId", "exam1");
@@ -89,7 +89,7 @@ async function run() {
   talifiForm.set("optB", "TB");
   talifiForm.set("optC", "TC");
   talifiForm.set("optD", "TD");
-  talifiForm.set("correctLabel", "B");
+  talifiForm.set("correctLabel", "2");
   const talifiReq = new Request(talifiUrl, { method: "POST", body: talifiForm });
   const talifiRes = await routeAdmin(talifiReq, talifiUrl, env);
   assert.ok(talifiRes instanceof Response);

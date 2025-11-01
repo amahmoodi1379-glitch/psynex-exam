@@ -162,15 +162,15 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
               <div><label>فصل</label> <select id="edit-chapter" name="chapterId"></select></div>
               <div><label>صورت سوال</label><br><textarea id="edit-stem" name="stem" required rows="3" style="width:100%"></textarea></div>
               <div id="edit-options">
-                <div><label>گزینه A</label><input id="edit-optA" name="optA" required style="width:100%"></div>
-                <div><label>گزینه B</label><input id="edit-optB" name="optB" required style="width:100%"></div>
-                <div><label>گزینه C</label><input id="edit-optC" name="optC" required style="width:100%"></div>
-                <div><label>گزینه D</label><input id="edit-optD" name="optD" required style="width:100%"></div>
+                <div><label>گزینه 1</label><input id="edit-optA" name="optA" required style="width:100%"></div>
+                <div><label>گزینه 2</label><input id="edit-optB" name="optB" required style="width:100%"></div>
+                <div><label>گزینه 3</label><input id="edit-optC" name="optC" required style="width:100%"></div>
+                <div><label>گزینه 4</label><input id="edit-optD" name="optD" required style="width:100%"></div>
                 <div>
                   <label>گزینه صحیح</label>
                   <select id="edit-correctLabel" name="correctLabel" required>
-                    <option value="A">A</option><option value="B">B</option>
-                    <option value="C">C</option><option value="D">D</option>
+                    <option value="1">1</option><option value="2">2</option>
+                    <option value="3">3</option><option value="4">4</option>
                   </select>
                 </div>
               </div>
@@ -337,17 +337,17 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
 
           if (q.options && q.options.length) {
             const map = new Map(q.options.map(o => [o.label, o.text]));
-            document.getElementById("edit-optA").value = map.get("A") || "";
-            document.getElementById("edit-optB").value = map.get("B") || "";
-            document.getElementById("edit-optC").value = map.get("C") || "";
-            document.getElementById("edit-optD").value = map.get("D") || "";
+            document.getElementById("edit-optA").value = map.get("1") || "";
+            document.getElementById("edit-optB").value = map.get("2") || "";
+            document.getElementById("edit-optC").value = map.get("3") || "";
+            document.getElementById("edit-optD").value = map.get("4") || "";
           } else {
             document.getElementById("edit-optA").value = "";
             document.getElementById("edit-optB").value = "";
             document.getElementById("edit-optC").value = "";
             document.getElementById("edit-optD").value = "";
           }
-          document.getElementById("edit-correctLabel").value = q.correctLabel || "A";
+          document.getElementById("edit-correctLabel").value = q.correctLabel || "1";
 
           if (typeof editDialog.showModal === "function") editDialog.showModal();
           else editDialog.style.display = "block";
@@ -468,12 +468,12 @@ function formToQuestionPayload(fd: FormData, type: QuestionType): Omit<Question,
 
   if (type !== "qa") {
     payload.options = [
-      { label: "A", text: String(fd.get("optA") || "") },
-      { label: "B", text: String(fd.get("optB") || "") },
-      { label: "C", text: String(fd.get("optC") || "") },
-      { label: "D", text: String(fd.get("optD") || "") },
+      { label: "1", text: String(fd.get("optA") || "") },
+      { label: "2", text: String(fd.get("optB") || "") },
+      { label: "3", text: String(fd.get("optC") || "") },
+      { label: "4", text: String(fd.get("optD") || "") },
     ];
-    payload.correctLabel = String(fd.get("correctLabel") || "A") as Question["correctLabel"];
+    payload.correctLabel = String(fd.get("correctLabel") || "1") as Question["correctLabel"];
   }
 
   return payload;
@@ -496,15 +496,15 @@ function formHtml(action: string, withOptions: boolean, root: "k"|"t"|"q") {
 
     <div><label>صورت سوال</label><br><textarea name="stem" required rows="3" style="width:100%"></textarea></div>
     ${withOptions ? `
-      <div><label>گزینه A</label><input name="optA" required style="width:100%"></div>
-      <div><label>گزینه B</label><input name="optB" required style="width:100%"></div>
-      <div><label>گزینه C</label><input name="optC" required style="width:100%"></div>
-      <div><label>گزینه D</label><input name="optD" required style="width:100%"></div>
+      <div><label>گزینه 1</label><input name="optA" required style="width:100%"></div>
+      <div><label>گزینه 2</label><input name="optB" required style="width:100%"></div>
+      <div><label>گزینه 3</label><input name="optC" required style="width:100%"></div>
+      <div><label>گزینه 4</label><input name="optD" required style="width:100%"></div>
       <div>
         <label>گزینه صحیح</label>
         <select name="correctLabel" required>
-          <option value="A">A</option><option value="B">B</option>
-          <option value="C">C</option><option value="D">D</option>
+          <option value="1">1</option><option value="2">2</option>
+          <option value="3">3</option><option value="4">4</option>
         </select>
       </div>` : ``}
     <div><label>پاسخنامه تشریحی</label><br><textarea name="expl" rows="3" style="width:100%"></textarea></div>

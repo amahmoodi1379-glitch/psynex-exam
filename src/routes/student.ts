@@ -5,7 +5,8 @@ import { PLAN_CATALOG, getPlanDefinition, type PlanDefinition, type PlanTier } f
 import {
   queryRandomQuestion, getQuestion, recordAnswer, upsertRating,
   chooseChallengeQuestion, listAnswersByClient, aggregateStatsFromLogs,
-  createExamDraft, gradeExam, getExamReview, listQuestions
+  createExamDraft, gradeExam, getExamReview, listQuestions,
+  type ChoiceLabel
 } from "../lib/dataStore";
 import { consumeUsage, describeUsageForPlan, getUsageSnapshots } from "../lib/usage";
 
@@ -226,7 +227,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         const body = await req.json();
         const id = body?.id as string;
         const type = body?.type as "konkur"|"talifi"|"qa";
-        const choice = body?.choice as "A"|"B"|"C"|"D"|undefined|null;
+        const choice = body?.choice as ChoiceLabel|undefined|null;
         const clientId = body?.clientId as string;
         const quality = body?.quality ? Number(body.quality) : undefined;
         const difficulty = body?.difficulty ? Number(body.difficulty) : undefined;

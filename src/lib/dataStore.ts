@@ -1,4 +1,5 @@
-export type Choice = { label: "A"|"B"|"C"|"D"; text: string };
+export type ChoiceLabel = "1"|"2"|"3"|"4";
+export type Choice = { label: ChoiceLabel; text: string };
 export type QuestionType = "konkur" | "talifi" | "qa";
 
 export type Question = {
@@ -13,7 +14,7 @@ export type Question = {
   chapterId?: string;
   stem: string;
   options?: Choice[];        // برای qa خالی است
-  correctLabel?: "A"|"B"|"C"|"D";
+  correctLabel?: ChoiceLabel;
   expl?: string;
   createdAt: number;
 };
@@ -153,7 +154,7 @@ export type StudentAnswerLog = {
   clientId: string;
   qid: string;
   type: QuestionType;
-  choice: "A"|"B"|"C"|"D";
+  choice: ChoiceLabel;
   correct: boolean;
   at: number;
   filters?: Partial<Pick<Question, "majorId"|"degreeId"|"ministryId"|"examYearId"|"courseId"|"sourceId"|"chapterId">>;
@@ -414,7 +415,7 @@ export type ExamDraft = {
   clientId: string;
   mode: "konkur"; // فعلاً فقط کنکور
   filters: Partial<Pick<Question, "majorId"|"courseId">>;
-  items: Array<{ id: string; type: QuestionType; correctLabel?: "A"|"B"|"C"|"D" }>;
+  items: Array<{ id: string; type: QuestionType; correctLabel?: ChoiceLabel }>;
   createdAt: number;
   durationSec: number;
 };
@@ -536,7 +537,7 @@ export async function gradeExam(
   env: any,
   clientId: string,
   examId: string,
-  answers: Array<{ id: string; type: QuestionType; choice: "A"|"B"|"C"|"D"|null }>
+  answers: Array<{ id: string; type: QuestionType; choice: ChoiceLabel|null }>
 ): Promise<ExamResult> {
   const raw = await env.DATA.get(examKey(clientId, examId));
   if (!raw) throw new Error("exam_not_found");
@@ -587,7 +588,7 @@ export async function gradeExam(
 }
 
 // -------- Exam submission & review (KV) --------
-export type ExamAnswer = { id: string; type: QuestionType; choice: "A"|"B"|"C"|"D"|null };
+export type ExamAnswer = { id: string; type: QuestionType; choice: ChoiceLabel|null };
 export type ExamSubmission = { id: string; clientId: string; examId: string; answers: ExamAnswer[]; submittedAt: number };
 
 const examAnsKey = (clientId: string, examId: string) => `examans:${clientId}:${examId}`;
@@ -598,8 +599,8 @@ export async function saveExamSubmission(env:any, clientId:string, examId:string
 }
 
 export async function getExamReview(env:any, clientId:string, examId:string): Promise<Array<{
-  id: string; type: QuestionType; stem: string; options: Choice[]; correctLabel?: "A"|"B"|"C"|"D";
-  expl?: string | null; userChoice: "A"|"B"|"C"|"D"|null; isCorrect: boolean|null;
+  id: string; type: QuestionType; stem: string; options: Choice[]; correctLabel?: ChoiceLabel;
+  expl?: string | null; userChoice: ChoiceLabel|null; isCorrect: boolean|null;
 }>> {
   const raw = await env.DATA.get(examKey(clientId, examId));
   if (!raw) throw new Error("exam_not_found");
@@ -610,8 +611,8 @@ export async function getExamReview(env:any, clientId:string, examId:string): Pr
   const amap = new Map(answers.map(a => [a.id, a.choice]));
 
   const out: Array<{
-    id: string; type: QuestionType; stem: string; options: Choice[]; correctLabel?: "A"|"B"|"C"|"D";
-    expl?: string | null; userChoice: "A"|"B"|"C"|"D"|null; isCorrect: boolean|null;
+    id: string; type: QuestionType; stem: string; options: Choice[]; correctLabel?: ChoiceLabel;
+    expl?: string | null; userChoice: ChoiceLabel|null; isCorrect: boolean|null;
   }> = [];
 
   for (const it of draft.items) {
