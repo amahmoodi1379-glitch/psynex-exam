@@ -982,9 +982,13 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
         // clientId دائمی
         const CLIENT_ID_KEY = "psx_cid";
-        let memoryClientId: string | null = null;
+        /** @type {string|null} */
+        let memoryClientId = null;
 
-        function generateFallbackId(): string {
+        /**
+         * @returns {string}
+         */
+        function generateFallbackId() {
           if (typeof crypto === "object" && typeof crypto?.getRandomValues === "function") {
             const bytes = new Uint8Array(16);
             crypto.getRandomValues(bytes);
@@ -1002,7 +1006,10 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           return "cid-" + Date.now().toString(16) + "-" + Math.random().toString(16).slice(2);
         }
 
-        function getClientId(): string {
+        /**
+         * @returns {string}
+         */
+        function getClientId() {
           if (memoryClientId) return memoryClientId;
           try {
             if (typeof localStorage !== "undefined") {
