@@ -595,7 +595,6 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         #plan-status .plan-meta-usage span strong{font-weight:600}
         #plan-status-msg{font-size:13px;margin-top:4px}
         #plan-status-msg.error{color:#b3261e;font-weight:600}
-        .qa-redirect-link{background:none;border:none;padding:0;margin:0 4px;color:#0b5ed7;text-decoration:underline;cursor:pointer;font:inherit}
       </style>
 
       <script id="plan-catalog" type="application/json">${JSON.stringify(planCatalog)}</script>
@@ -622,6 +621,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             <select id="type">
               <option value="konkur">کنکور</option>
               <option value="talifi">تالیفی</option>
+              <option value="qa">تشریحی</option>
             </select>
           </div>
           <div><label>رشته (الزامی)</label> <select id="major" required></select></div>
@@ -633,14 +633,6 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           <div data-talifi-only><label>فصل</label> <select id="chapter"></select></div>
           <button id="fetchBtn">یافتن سؤال</button>
         </div>
-
-        ${showQaTab ? `
-        <div class="muted" id="qa-redirect-note" style="margin-top:6px">
-          برای مشاهده پرسش‌های تشریحی به تب
-          <button type="button" id="qa-redirect-btn" class="qa-redirect-link">پرسش‌های تشریحی</button>
-          برو.
-        </div>
-        ` : ""}
 
         <div class="card" id="qbox" style="display:none">
           <div id="stem" style="font-weight:600;margin-bottom:8px"></div>
@@ -835,8 +827,6 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
               showTab('tab-single');
             }
           }
-          resolveSingleQuestionType();
-          updateSingleKonkurFields();
         }
 
         updateFeatureVisibility();
@@ -1060,35 +1050,6 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           }
         }
 
-        const ALLOWED_SINGLE_TYPES = ["konkur", "talifi"];
-
-        function canUseQaTab() {
-          return !!planMeta?.featureFlags?.qaBank;
-        }
-
-        function createQaRedirectButton() {
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.textContent = "پرسش‌های تشریحی";
-          btn.className = "qa-redirect-link";
-          btn.addEventListener("click", () => showTab("tab-qa"));
-          return btn;
-        }
-
-        function resolveSingleQuestionType() {
-          const typeEl = document.getElementById("type");
-          if (typeEl instanceof HTMLSelectElement) {
-            const value = typeEl.value;
-            if (ALLOWED_SINGLE_TYPES.includes(value)) {
-              return value;
-            }
-            const fallback = ALLOWED_SINGLE_TYPES[0];
-            typeEl.value = fallback;
-            return fallback;
-          }
-          return ALLOWED_SINGLE_TYPES[0];
-        }
-
         // ---------- تک‌سؤال‌ها ----------
         async function initCascadesSingle() {
           await fill("major", "/api/taxonomy/majors", "id", "name", false);
@@ -1130,7 +1091,8 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         }
 
         function updateSingleKonkurFields() {
-          const typeValue = resolveSingleQuestionType();
+          const typeEl = document.getElementById("type");
+          const typeValue = typeEl && "value" in typeEl ? typeEl.value : "";
           const isKonkur = typeValue === "konkur";
           const toggleNodes = (selector, shouldShow) => {
             document.querySelectorAll(selector).forEach((node) => {
@@ -1208,7 +1170,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         }
 
         async function fetchRandom() {
-          const type = resolveSingleQuestionType();
+          const type = $("#type").value;
           const filters = currentFiltersSingle();
           const majorId = filters.majorId;
           if (!majorId) { alert("رشته را انتخاب کن."); return; }
@@ -1241,31 +1203,31 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           $("#qbox").style.display="block";
           $("#stem").textContent = q.stem;
           const box = $("#opts"); box.innerHTML = "";
-          const opts = Array.isArray(q.options) ? q.options : [];
-          const isQaLike = q.type === "qa" || opts.length === 0;
-          if (isQaLike) {
+          const opts = q.options || [];
+          if (opts.length) {
+            for (const o of opts) {
+              const btn = document.createElement("button");
+              btn.textContent = o.label + ") " + o.text;
+              btn.style.display = "block";
+              btn.style.margin = "6px 0";
+              btn.onclick = () => answer(q, o.label, "single");
+              box.appendChild(btn);
+            }
+            $("#result").textContent = "";
+          } else {
             const note = document.createElement("div");
             note.className = "muted";
-            if (canUseQaTab()) {
-              note.append("این پرسش تشریحی است. برای مشاهده پاسخ به تب ", createQaRedirectButton(), " برو.");
-            } else {
-              note.textContent = "این پرسش گزینه‌ای ندارد و پاسخ تشریحی در این بخش در دسترس نیست.";
-            }
+            note.textContent = "این پرسش گزینه‌ای ندارد. برای مشاهده پاسخ تشریحی دکمه زیر را بزن.";
             box.appendChild(note);
-            $("#result").textContent = "";
-            $("#nextBtn").onclick = () => fetchRandom();
-            $("#qbox").dataset.id = q.id; $("#qbox").dataset.type = q.type; $("#qbox").dataset.expl = q.expl || "";
-            return;
-          }
-          for (const o of opts) {
             const btn = document.createElement("button");
-            btn.textContent = o.label + ") " + o.text;
+            btn.textContent = "مشاهده پاسخ تشریحی";
             btn.style.display = "block";
             btn.style.margin = "6px 0";
-            btn.onclick = () => answer(q, o.label, "single");
+            btn.onclick = () => answer(q, null, "single");
             box.appendChild(btn);
+            const res = $("#result");
+            res.textContent = "";
           }
-          $("#result").textContent = "";
           $("#nextBtn").onclick = () => fetchRandom();
           $("#qbox").dataset.id = q.id; $("#qbox").dataset.type = q.type; $("#qbox").dataset.expl = q.expl || "";
         }
@@ -1881,8 +1843,6 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         // رویدادها
         const singleFetchBtn = document.getElementById("fetchBtn");
         if (singleFetchBtn) singleFetchBtn.addEventListener("click", fetchRandom);
-        const qaRedirectBtn = document.getElementById("qa-redirect-btn");
-        if (qaRedirectBtn) qaRedirectBtn.addEventListener("click", () => showTab("tab-qa"));
         const typeSelectSingle = document.getElementById("type");
         if (typeSelectSingle) typeSelectSingle.addEventListener("change", updateSingleKonkurFields);
         const challengeFetchBtn = document.getElementById("cfetchBtn");
