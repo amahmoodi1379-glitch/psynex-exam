@@ -54,12 +54,12 @@ async function run() {
     courseId: "course1",
     stem: "initial stem",
     options: [
-      { label: "A", text: "old A" },
-      { label: "B", text: "old B" },
-      { label: "C", text: "old C" },
-      { label: "D", text: "old D" },
+      { label: "1", text: "old A" },
+      { label: "2", text: "old B" },
+      { label: "3", text: "old C" },
+      { label: "4", text: "old D" },
     ],
-    correctLabel: "A" as const,
+    correctLabel: "1" as const,
   };
 
   const id = await createQuestion(env, baseQuestion);
@@ -81,11 +81,11 @@ async function run() {
   form.set("majorId", "maj2");
   form.set("courseId", "course2");
   form.set("stem", "updated stem");
-  form.set("optA", "new A");
-  form.set("optB", "new B");
-  form.set("optC", "new C");
-  form.set("optD", "new D");
-  form.set("correctLabel", "B");
+  form.set("opt1", "new A");
+  form.set("opt2", "new B");
+  form.set("opt3", "new C");
+  form.set("opt4", "new D");
+  form.set("correctLabel", "2");
   form.set("expl", "new explanation");
 
   const updateReq = new Request(updateUrl, { method: "POST", body: form });
@@ -95,13 +95,13 @@ async function run() {
   const updateBody: any = await updateRes.json();
   assert.equal(updateBody?.ok, true);
   assert.equal(updateBody?.data?.stem, "updated stem");
-  assert.equal(updateBody?.data?.correctLabel, "B");
+  assert.equal(updateBody?.data?.correctLabel, "2");
   assert.equal(updateBody?.data?.majorId, "maj2");
 
   const stored = await getQuestion(env, "konkur", id);
   assert.ok(stored);
   assert.equal(stored?.stem, "updated stem");
-  assert.equal(stored?.correctLabel, "B");
+  assert.equal(stored?.correctLabel, "2");
   assert.equal(stored?.options?.[0]?.text, "new A");
   assert.equal(stored?.expl, "new explanation");
 
