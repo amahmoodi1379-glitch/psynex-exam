@@ -991,11 +991,58 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         if (location.hash && document.getElementById(location.hash.slice(1))) showTab(location.hash.slice(1));
 
         // clientId دائمی
+        const CLIENT_ID_KEY = "psx_cid";
+        let memoryClientId = null;
+
+        function generateFallbackId() {
+          if (typeof crypto === "object" && typeof crypto?.getRandomValues === "function") {
+            const bytes = new Uint8Array(16);
+            crypto.getRandomValues(bytes);
+            const segments = [
+              Array.from(bytes.slice(0, 4)),
+              Array.from(bytes.slice(4, 6)),
+              Array.from(bytes.slice(6, 8)),
+              Array.from(bytes.slice(8, 10)),
+              Array.from(bytes.slice(10, 16)),
+            ].map(arr => arr.map(b => b.toString(16).padStart(2, "0")).join(""));
+            return segments.join("-");
+          }
+          return `cid-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+        }
+
         function getClientId(){
-          const k="psx_cid";
-          let v = localStorage.getItem(k);
-          if (!v) { v = crypto.randomUUID(); localStorage.setItem(k, v); }
-          return v;
+          if (memoryClientId) return memoryClientId;
+          try {
+            if (typeof localStorage !== "undefined") {
+              const stored = localStorage.getItem(CLIENT_ID_KEY);
+              if (stored) {
+                memoryClientId = stored;
+                return stored;
+              }
+            }
+
+            if (typeof crypto === "object" && typeof crypto?.randomUUID === "function") {
+              const generated = crypto.randomUUID();
+              if (typeof localStorage !== "undefined") {
+                localStorage.setItem(CLIENT_ID_KEY, generated);
+              }
+              memoryClientId = generated;
+              return generated;
+            }
+
+            throw new Error("randomUUID unavailable");
+          } catch (err) {
+            const fallback = generateFallbackId();
+            memoryClientId = fallback;
+            try {
+              if (typeof localStorage !== "undefined") {
+                localStorage.setItem(CLIENT_ID_KEY, fallback);
+              }
+            } catch (_) {
+              // ignore storage errors in fallback scenario
+            }
+            return fallback;
+          }
         }
         const clientId = getClientId();
 
