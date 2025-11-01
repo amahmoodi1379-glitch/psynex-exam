@@ -992,9 +992,9 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
 
         // clientId دائمی
         const CLIENT_ID_KEY = "psx_cid";
-        let memoryClientId = null;
+        let memoryClientId: string | null = null;
 
-        function generateFallbackId() {
+        function generateFallbackId(): string {
           if (typeof crypto === "object" && typeof crypto?.getRandomValues === "function") {
             const bytes = new Uint8Array(16);
             crypto.getRandomValues(bytes);
@@ -1007,10 +1007,10 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             ].map(arr => arr.map(b => b.toString(16).padStart(2, "0")).join(""));
             return segments.join("-");
           }
-          return `cid-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+          return "cid-" + Date.now().toString(16) + "-" + Math.random().toString(16).slice(2);
         }
 
-        function getClientId(){
+        function getClientId(): string {
           if (memoryClientId) return memoryClientId;
           try {
             if (typeof localStorage !== "undefined") {
@@ -1034,13 +1034,6 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           } catch (err) {
             const fallback = generateFallbackId();
             memoryClientId = fallback;
-            try {
-              if (typeof localStorage !== "undefined") {
-                localStorage.setItem(CLIENT_ID_KEY, fallback);
-              }
-            } catch (_) {
-              // ignore storage errors in fallback scenario
-            }
             return fallback;
           }
         }
