@@ -197,6 +197,16 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         if (location.hash && document.getElementById(location.hash.slice(1))) showTab(location.hash.slice(1));
 
         // helpers
+        function resetSelectOptions(el) {
+          if (!(el instanceof HTMLSelectElement)) return;
+          el.innerHTML = "";
+          const placeholder = document.createElement("option");
+          placeholder.value = "";
+          placeholder.textContent = "یک گزینه را انتخاب کنید";
+          placeholder.disabled = true;
+          placeholder.selected = true;
+          el.appendChild(placeholder);
+        }
         async function fillSelect(id, url, valueKey = "id", labelKey = "name", selectedValue) {
           const el = document.getElementById(id);
           if (!(el instanceof HTMLSelectElement)) return;
@@ -240,7 +250,11 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
 
           const updateChapters = async () => {
             const sourceId = sourceEl.value || "";
-            await fillSelect(rootId+"-chapter", "/api/taxonomy/chapters?sourceId=" + sourceId);
+            if (!sourceId) {
+              resetSelectOptions(chapterEl);
+              return;
+            }
+            await fillSelect(rootId+"-chapter", "/api/taxonomy/chapters?sourceId=" + encodeURIComponent(sourceId));
           };
 
           const updateSources = async () => {

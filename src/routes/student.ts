@@ -990,10 +990,15 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         const clientId = getClientId();
 
         // helper برای دراپ‌داون‌ها
-        async function fill(id, url, v="id", l="name", allowEmpty=true) {
+        function resetSelect(id, allowEmpty = true) {
           const el = document.getElementById(id);
           if (!el) return;
           el.innerHTML = allowEmpty ? "<option value=''>--</option>" : "";
+        }
+        async function fill(id, url, v="id", l="name", allowEmpty=true) {
+          const el = document.getElementById(id);
+          if (!el) return;
+          resetSelect(id, allowEmpty);
           const res = await fetch(url); const items = await res.json();
           for (const it of items) {
             const o=document.createElement("option");
@@ -1015,17 +1020,31 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             const cid = $("#course").value || "";
             await fill("source", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
             const sid = $("#source").value || "";
-            await fill("chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+            if (sid) {
+              await fill("chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+            } else {
+              resetSelect("chapter");
+            }
           };
           await upd();
           $("#major").addEventListener("change", upd);
           $("#course").addEventListener("change", async () => {
             const cid = $("#course").value || "";
             await fill("source", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
+            const sid = $("#source").value || "";
+            if (sid) {
+              await fill("chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+            } else {
+              resetSelect("chapter");
+            }
           });
           $("#source").addEventListener("change", async () => {
             const sid = $("#source").value || "";
-            await fill("chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+            if (sid) {
+              await fill("chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+            } else {
+              resetSelect("chapter");
+            }
           });
         }
 
@@ -1175,7 +1194,11 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             const cid = courseEl.value || "";
             await fill("csource", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
             const sid = sourceEl.value || "";
-            await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+            if (sid) {
+              await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+            } else {
+              resetSelect("cchapter");
+            }
           };
           await upd();
           if ("addEventListener" in majorEl) majorEl.addEventListener("change", upd);
@@ -1183,11 +1206,19 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             const cid = courseEl.value || "";
             await fill("csource", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
             const sid = sourceEl.value || "";
-            await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+            if (sid) {
+              await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+            } else {
+              resetSelect("cchapter");
+            }
           });
           if ("addEventListener" in sourceEl) sourceEl.addEventListener("change", async () => {
             const sid = sourceEl.value || "";
-            await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+            if (sid) {
+              await fill("cchapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+            } else {
+              resetSelect("cchapter");
+            }
           });
         }
 
@@ -1464,17 +1495,31 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             const cid = $("#x-course").value || "";
             await fill("x-source", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid), "id", "name", true);
             const sid = $("#x-source").value || "";
-            await fill("x-chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid), "id", "name", true);
+            if (sid) {
+              await fill("x-chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid), "id", "name", true);
+            } else {
+              resetSelect("x-chapter", true);
+            }
           };
           await upd();
           $("#x-major").addEventListener("change", upd);
           $("#x-course").addEventListener("change", async () => {
             const cid = $("#x-course").value || "";
             await fill("x-source", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid), "id", "name", true);
+            const sid = $("#x-source").value || "";
+            if (sid) {
+              await fill("x-chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid), "id", "name", true);
+            } else {
+              resetSelect("x-chapter", true);
+            }
           });
           $("#x-source").addEventListener("change", async () => {
             const sid = $("#x-source").value || "";
-            await fill("x-chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid), "id", "name", true);
+            if (sid) {
+              await fill("x-chapter", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid), "id", "name", true);
+            } else {
+              resetSelect("x-chapter", true);
+            }
           });
         }
 
