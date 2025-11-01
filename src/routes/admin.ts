@@ -279,7 +279,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
 
           majorEl.addEventListener("change", updateCourses);
           courseEl.addEventListener("change", updateSources);
-          if (sourceEl) sourceEl.addEventListener("change", updateChapters);
+          sourceEl?.addEventListener("change", updateChapters);
 
           await new Promise(r => setTimeout(r, 120));
           await updateCourses();
