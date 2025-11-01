@@ -162,10 +162,10 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
               <div><label>فصل</label> <select id="edit-chapter" name="chapterId"></select></div>
               <div><label>صورت سوال</label><br><textarea id="edit-stem" name="stem" required rows="3" style="width:100%"></textarea></div>
               <div id="edit-options">
-                <div><label>گزینه 1</label><input id="edit-optA" name="optA" required style="width:100%"></div>
-                <div><label>گزینه 2</label><input id="edit-optB" name="optB" required style="width:100%"></div>
-                <div><label>گزینه 3</label><input id="edit-optC" name="optC" required style="width:100%"></div>
-                <div><label>گزینه 4</label><input id="edit-optD" name="optD" required style="width:100%"></div>
+                <div><label>گزینه 1</label><input id="edit-opt1" name="opt1" required style="width:100%"></div>
+                <div><label>گزینه 2</label><input id="edit-opt2" name="opt2" required style="width:100%"></div>
+                <div><label>گزینه 3</label><input id="edit-opt3" name="opt3" required style="width:100%"></div>
+                <div><label>گزینه 4</label><input id="edit-opt4" name="opt4" required style="width:100%"></div>
                 <div>
                   <label>گزینه صحیح</label>
                   <select id="edit-correctLabel" name="correctLabel" required>
@@ -337,15 +337,15 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
 
           if (q.options && q.options.length) {
             const map = new Map(q.options.map(o => [o.label, o.text]));
-            document.getElementById("edit-optA").value = map.get("1") || "";
-            document.getElementById("edit-optB").value = map.get("2") || "";
-            document.getElementById("edit-optC").value = map.get("3") || "";
-            document.getElementById("edit-optD").value = map.get("4") || "";
+            document.getElementById("edit-opt1").value = map.get("1") || "";
+            document.getElementById("edit-opt2").value = map.get("2") || "";
+            document.getElementById("edit-opt3").value = map.get("3") || "";
+            document.getElementById("edit-opt4").value = map.get("4") || "";
           } else {
-            document.getElementById("edit-optA").value = "";
-            document.getElementById("edit-optB").value = "";
-            document.getElementById("edit-optC").value = "";
-            document.getElementById("edit-optD").value = "";
+            document.getElementById("edit-opt1").value = "";
+            document.getElementById("edit-opt2").value = "";
+            document.getElementById("edit-opt3").value = "";
+            document.getElementById("edit-opt4").value = "";
           }
           document.getElementById("edit-correctLabel").value = q.correctLabel || "1";
 
@@ -468,10 +468,10 @@ function formToQuestionPayload(fd: FormData, type: QuestionType): Omit<Question,
 
   if (type !== "qa") {
     payload.options = [
-      { label: "1", text: String(fd.get("optA") || "") },
-      { label: "2", text: String(fd.get("optB") || "") },
-      { label: "3", text: String(fd.get("optC") || "") },
-      { label: "4", text: String(fd.get("optD") || "") },
+      { label: "1", text: String(fd.get("opt1") || "") },
+      { label: "2", text: String(fd.get("opt2") || "") },
+      { label: "3", text: String(fd.get("opt3") || "") },
+      { label: "4", text: String(fd.get("opt4") || "") },
     ];
     payload.correctLabel = String(fd.get("correctLabel") || "1") as Question["correctLabel"];
   }
@@ -496,10 +496,10 @@ function formHtml(action: string, withOptions: boolean, root: "k"|"t"|"q") {
 
     <div><label>صورت سوال</label><br><textarea name="stem" required rows="3" style="width:100%"></textarea></div>
     ${withOptions ? `
-      <div><label>گزینه 1</label><input name="optA" required style="width:100%"></div>
-      <div><label>گزینه 2</label><input name="optB" required style="width:100%"></div>
-      <div><label>گزینه 3</label><input name="optC" required style="width:100%"></div>
-      <div><label>گزینه 4</label><input name="optD" required style="width:100%"></div>
+      <div><label>گزینه 1</label><input name="opt1" required style="width:100%"></div>
+      <div><label>گزینه 2</label><input name="opt2" required style="width:100%"></div>
+      <div><label>گزینه 3</label><input name="opt3" required style="width:100%"></div>
+      <div><label>گزینه 4</label><input name="opt4" required style="width:100%"></div>
       <div>
         <label>گزینه صحیح</label>
         <select name="correctLabel" required>

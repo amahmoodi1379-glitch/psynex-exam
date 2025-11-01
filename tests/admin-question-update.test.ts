@@ -81,10 +81,10 @@ async function run() {
   form.set("majorId", "maj2");
   form.set("courseId", "course2");
   form.set("stem", "updated stem");
-  form.set("optA", "new A");
-  form.set("optB", "new B");
-  form.set("optC", "new C");
-  form.set("optD", "new D");
+  form.set("opt1", "new A");
+  form.set("opt2", "new B");
+  form.set("opt3", "new C");
+  form.set("opt4", "new D");
   form.set("correctLabel", "2");
   form.set("expl", "new explanation");
 

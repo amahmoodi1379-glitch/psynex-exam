@@ -598,10 +598,12 @@ export async function saveExamSubmission(env:any, clientId:string, examId:string
   await env.DATA.put(examAnsKey(clientId, examId), JSON.stringify(sub));
 }
 
-export async function getExamReview(env:any, clientId:string, examId:string): Promise<Array<{
+export type ExamReviewItem = {
   id: string; type: QuestionType; stem: string; options: Choice[]; correctLabel?: ChoiceLabel;
   expl?: string | null; userChoice: ChoiceLabel|null; isCorrect: boolean|null;
-}>> {
+};
+
+export async function getExamReview(env:any, clientId:string, examId:string): Promise<ExamReviewItem[]> {
   const raw = await env.DATA.get(examKey(clientId, examId));
   if (!raw) throw new Error("exam_not_found");
   const draft: ExamDraft = JSON.parse(raw);
@@ -610,10 +612,7 @@ export async function getExamReview(env:any, clientId:string, examId:string): Pr
   const answers: ExamAnswer[] = ansRaw ? (JSON.parse(ansRaw).answers || []) : [];
   const amap = new Map(answers.map(a => [a.id, a.choice]));
 
-  const out: Array<{
-    id: string; type: QuestionType; stem: string; options: Choice[]; correctLabel?: ChoiceLabel;
-    expl?: string | null; userChoice: ChoiceLabel|null; isCorrect: boolean|null;
-  }> = [];
+  const out: ExamReviewItem[] = [];
 
   for (const it of draft.items) {
     const q = await getQuestion(env, it.type as QuestionType, it.id);
