@@ -1,5 +1,3 @@
-import globalStyles from "./global.css?raw";
-
 export function page(title: string, body: string): string {
   return `<!doctype html>
 <html lang="fa" dir="rtl">
@@ -7,23 +5,22 @@ export function page(title: string, body: string): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${title}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
-${globalStyles}
+    body{font-family: system-ui,-apple-system,Segoe UI,Roboto;max-width: 960px;margin:24px auto;padding:0 16px;line-height:1.7}
+    nav a{margin:0 8px;text-decoration:none}
+    .tabs a{margin-right:8px}
+    .card{border:1px solid #ddd;border-radius:12px;padding:16px;margin:12px 0}
+    .muted{color:#666}
   </style>
 </head>
 <body>
-  <nav class="app-nav">
+  <nav>
     <a href="/">خانه</a>
     <a href="/admin">ادمین</a>
     <a href="/student">دانشجو</a>
     <a href="/management">مدیریت</a>
   </nav>
-  <main class="page-content">
-    ${body}
-  </main>
+  ${body}
 </body>
 </html>`;
 }
