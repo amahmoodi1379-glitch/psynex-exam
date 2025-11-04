@@ -742,18 +742,20 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         </div>
 
         <div id="exam-box" style="display:none">
-          <div style="display:flex; justify-content:space-between; align-items:center">
+          <div class="toolbar" style="margin-top:0">
             <div>سؤال <span id="x-idx">1</span>/<span id="x-total">0</span></div>
             <div>زمان: <span id="x-timer">00:00</span></div>
           </div>
-          <div id="x-stem" style="font-weight:600;margin:10px 0"></div>
-          <div id="x-opts"></div>
-          <div style="margin-top:10px; display:flex; gap:8px">
+          <div id="x-question" class="question">
+            <div id="x-stem" style="font-weight:600"></div>
+            <div id="x-opts" class="options"></div>
+          </div>
+          <div id="x-controls" class="toolbar">
             <button id="x-prev">قبلی</button>
             <button id="x-next">بعدی</button>
-            <button id="x-submit" style="margin-right:auto">پایان آزمون</button>
+            <button id="x-submit" style="margin-inline-start:auto">پایان آزمون</button>
           </div>
-          <div id="x-msg" class="muted" style="margin-top:8px"></div>
+          <div id="x-msg" class="muted" style="margin-top:var(--s-2)"></div>
         </div>
 
         <div id="exam-result" style="display:none" class="muted"></div>
@@ -1610,15 +1612,32 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           $("#x-idx").textContent = String(exam.idx+1);
           $("#x-timer").textContent = fmt(exam.tLeft);
           const q = exam.questions[exam.idx];
-          $("#x-stem").textContent = q.stem;
-          const box = $("#x-opts"); box.innerHTML = "";
+          const stemEl = document.getElementById("x-stem");
+          if (stemEl) stemEl.textContent = q.stem;
           const chosen = exam.answers[q.id] || null;
-          for (const o of (q.options || [])) {
-            const b = document.createElement("button");
-            b.textContent = o.label+") "+o.text; b.style.display="block"; b.style.margin="6px 0";
-            if (chosen === o.label) { b.style.outline="2px solid #222"; }
-            b.onclick = () => { exam.answers[q.id] = o.label; renderExam(); };
-            box.appendChild(b);
+          const box = document.getElementById("x-opts");
+          if (box) {
+            box.innerHTML = "";
+            const name = "exam-" + q.id;
+            for (const o of (q.options || [])) {
+              const opt = document.createElement("label");
+              opt.className = "option";
+              const input = document.createElement("input");
+              input.type = "radio";
+              input.name = name;
+              input.value = o.label;
+              input.checked = chosen === o.label;
+              input.addEventListener("change", () => {
+                exam.answers[q.id] = o.label;
+                renderExam();
+              });
+              const text = document.createElement("span");
+              text.textContent = o.label + ") " + o.text;
+              opt.appendChild(input);
+              opt.appendChild(text);
+              if (chosen === o.label) opt.classList.add("selected");
+              box.appendChild(opt);
+            }
           }
           $("#x-msg").textContent = chosen ? ("پاسخ انتخابی: "+chosen) : "بدون پاسخ";
         }
@@ -1690,36 +1709,105 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           const box = document.getElementById("review-box");
           box.style.display = "block";
           box.innerHTML = "";
+          box.classList.add("stack-3");
+          let idx = 0;
           for (const it of d.data) {
             const wrap = document.createElement("div");
-            wrap.className = "card";
-            wrap.style.marginTop = "6px";
+            wrap.className = "question stack-3";
+            if (idx > 0) wrap.style.marginTop = "var(--s-3)";
 
             const head = document.createElement("div");
-            head.innerHTML = (it.isCorrect===true ? "✅" : it.isCorrect===false ? "❌" : "⬜️") + " " + it.stem;
-            head.style.fontWeight = "600";
+            head.style.display = "flex";
+            head.style.alignItems = "flex-start";
+            head.style.justifyContent = "space-between";
+            head.style.gap = "var(--s-2)";
+
+            const stem = document.createElement("div");
+            stem.style.fontWeight = "600";
+            stem.textContent = it.stem;
+            head.appendChild(stem);
+
+            const status = document.createElement("span");
+            status.className = "badge";
+            let statusClass = "badge-warn";
+            let statusText = "بدون پاسخ";
+            if (it.isCorrect === true) {
+              statusClass = "badge-success";
+              statusText = "پاسخ صحیح";
+            } else if (it.isCorrect === false && it.userChoice) {
+              statusClass = "badge-danger";
+              statusText = "پاسخ نادرست";
+            } else if (it.userChoice) {
+              statusClass = null;
+              statusText = "پاسخ انتخابی";
+            }
+            if (statusClass) status.classList.add(statusClass);
+            status.textContent = statusText;
+            head.appendChild(status);
             wrap.appendChild(head);
 
             const opts = document.createElement("div");
+            opts.className = "options";
+            const name = "review-" + idx;
             for (const o of (it.options||[])) {
-              const line = document.createElement("div");
-              let text = o.label + ") " + o.text;
-              if (it.userChoice === o.label) text += "  ← پاسخ شما";
-              if (it.correctLabel === o.label) text += "  (گزینه صحیح)";
-              line.textContent = text;
-              opts.appendChild(line);
+              const row = document.createElement("label");
+              row.className = "option";
+
+              const input = document.createElement("input");
+              input.type = "radio";
+              input.disabled = true;
+              input.name = name;
+              input.value = o.label;
+              input.checked = it.userChoice === o.label;
+              row.appendChild(input);
+
+              const text = document.createElement("span");
+              text.textContent = o.label + ") " + o.text;
+              row.appendChild(text);
+
+              const chipWrap = document.createElement("div");
+              chipWrap.className = "option-chips";
+
+              if (it.correctLabel === o.label) {
+                row.classList.add("correct");
+                const chip = document.createElement("span");
+                chip.className = "badge badge-success";
+                chip.textContent = "گزینه صحیح";
+                chipWrap.appendChild(chip);
+              }
+
+              if (it.userChoice === o.label) {
+                row.classList.add("selected");
+                const chip = document.createElement("span");
+                if (it.isCorrect === true) {
+                  row.classList.add("correct");
+                  chip.className = "badge badge-success";
+                  chip.textContent = "پاسخ شما";
+                } else {
+                  row.classList.add("incorrect");
+                  chip.className = "badge badge-danger";
+                  chip.textContent = "پاسخ شما";
+                }
+                chipWrap.appendChild(chip);
+              }
+
+              if (chipWrap.childElementCount > 0) {
+                row.appendChild(chipWrap);
+              }
+
+              opts.appendChild(row);
             }
             wrap.appendChild(opts);
 
             if (it.expl) {
               const ex = document.createElement("div");
-              ex.style.marginTop = "6px";
               ex.className = "muted";
               ex.style.whiteSpace = "pre-line";
               ex.innerHTML = "پاسخ تشریحی: " + it.expl;
               wrap.appendChild(ex);
             }
             box.appendChild(wrap);
+            idx++;
           }
           // اسکرول به پاسخنامه
           document.getElementById("x-show-review").scrollIntoView({ behavior: "smooth", block: "center" });
