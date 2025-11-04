@@ -1395,6 +1395,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             expl.className = "muted";
             expl.style.marginTop = "6px";
             expl.style.display = "none";
+            expl.style.whiteSpace = "pre-line";
             expl.innerHTML = it.expl || "";
 
             btn.addEventListener("click", () => revealQa(it, qSel, dSel, expl, btn));
@@ -1502,15 +1503,18 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           });
           const d = await res.json();
           const target = (mode==="single") ? "#result" : "#cresult";
-          if (!d.ok) { document.querySelector(target).textContent = "خطا."; return; }
+          const resultEl = /** @type {HTMLElement|null} */ (document.querySelector(target));
+          if (!resultEl) return;
+          resultEl.style.whiteSpace = "pre-line";
+          if (!d.ok) { resultEl.textContent = "خطا."; return; }
           if (q.type === "qa" || !choice) {
             const html = d.expl ? "<div style='margin-top:6px'>"+d.expl+"</div>" : "پاسخی برای این پرسش ثبت نشده است.";
-            document.querySelector(target).innerHTML = html;
+            resultEl.innerHTML = html;
             if (mode==="single") { seenAdd(q.id); }
             return;
           }
           const html = (d.correct? "✅ درست": "❌ غلط") + (d.correctLabel? " — گزینه صحیح: " + d.correctLabel : "") + (d.expl? "<div style='margin-top:6px'>"+d.expl+"</div>": "");
-          document.querySelector(target).innerHTML = html;
+          resultEl.innerHTML = html;
           if (mode==="single") { seenAdd(q.id); }
         }
 
@@ -1711,6 +1715,7 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
               const ex = document.createElement("div");
               ex.style.marginTop = "6px";
               ex.className = "muted";
+              ex.style.whiteSpace = "pre-line";
               ex.innerHTML = "پاسخ تشریحی: " + it.expl;
               wrap.appendChild(ex);
             }
