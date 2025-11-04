@@ -1413,7 +1413,6 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
         }
 
         async function revealQa(item, qSel, dSel, explEl, btn) {
-          explEl.style.whiteSpace = "pre-line";
           if (explEl.dataset.revealed === "1") {
             explEl.style.display = "block";
             return;
