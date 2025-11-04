@@ -1,4 +1,7 @@
-export function page(title: string, body: string): string {
+type PageOptions = { headExtra?: string };
+
+export function page(title: string, body: string, options: PageOptions = {}): string {
+  const { headExtra = "" } = options;
   return `<!doctype html>
 <html lang="fa" dir="rtl">
 <head>
@@ -6,13 +9,8 @@ export function page(title: string, body: string): string {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>${title}</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap">
-  <style>
-    body{font-family:"Vazirmatn","IRANSans","IRANYekan","Tahoma",system-ui,-apple-system,"Segoe UI",Roboto,Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji";max-width: 960px;margin:24px auto;padding:0 16px;line-height:1.7}
-    nav a{margin:0 8px;text-decoration:none}
-    .tabs a{margin-right:8px}
-    .card{border:1px solid #ddd;border-radius:12px;padding:16px;margin:12px 0}
-    .muted{color:#666}
-  </style>
+  <link rel="stylesheet" href="/styles.css">
+  ${headExtra}
 </head>
 <body>
   <nav>
