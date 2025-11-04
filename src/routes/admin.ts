@@ -286,13 +286,36 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         }
         function wireForm(formId, echoId) {
           const form = document.getElementById(formId);
+          const echoEl = document.getElementById(echoId);
+          const resettableSelectors = ["textarea", 'input:not([type="hidden"])', 'select[name="correctLabel"]'];
+          if (!form || !echoEl) return;
+          const resettableQuery = resettableSelectors.join(",");
           form.addEventListener("submit", async (ev) => {
             ev.preventDefault();
             const fd = new FormData(form);
-            const res = await fetch(form.action, { method: "POST", body: fd });
-            const data = await res.json();
-            document.getElementById(echoId).textContent = JSON.stringify(data, null, 2);
-            // فرم را خالی نکن تا بشود سریع چندتا پشت سر هم ساخت
+            let data;
+            try {
+              const res = await fetch(form.action, { method: "POST", body: fd });
+              data = await res.json();
+            } catch (err) {
+              echoEl.textContent = "خطا در برقراری ارتباط با سرور";
+              return;
+            }
+            if (data && data.ok) {
+              echoEl.textContent = "ثبت شد";
+              form.querySelectorAll(resettableQuery).forEach((el) => {
+                if (el instanceof HTMLTextAreaElement) {
+                  el.value = "";
+                } else if (el instanceof HTMLInputElement && el.type !== "hidden") {
+                  el.value = "";
+                } else if (el instanceof HTMLSelectElement && el.name === "correctLabel") {
+                  el.selectedIndex = 0;
+                }
+              });
+            } else {
+              const message = data && data.error ? "خطا: " + data.error : "خطا در ثبت اطلاعات";
+              echoEl.textContent = message;
+            }
           });
         }
 
