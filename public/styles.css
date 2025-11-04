@@ -2,7 +2,7 @@
 
 /* 1) Tokens */
 :root{
-  --font-fa: "Vazirmatn", system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+  --font-fa: "Vazirmatn", "IRANSans", "IRANYekan", "Tahoma", system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
   --bg: #0b0d12;
   --surface: #12151d;
   --border: #202433;
