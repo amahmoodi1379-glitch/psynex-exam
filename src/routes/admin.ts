@@ -304,12 +304,12 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
             if (data && data.ok) {
               echoEl.textContent = "ثبت شد";
               form.querySelectorAll(resettableQuery).forEach((el) => {
-                if (el instanceof HTMLTextAreaElement) {
-                  el.value = "";
-                } else if (el instanceof HTMLInputElement && el.type !== "hidden") {
-                  el.value = "";
-                } else if (el instanceof HTMLSelectElement && el.name === "correctLabel") {
+                if (el instanceof HTMLSelectElement) {
                   el.selectedIndex = 0;
+                  return;
+                }
+                if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+                  el.value = "";
                 }
               });
             } else {
