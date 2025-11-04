@@ -1608,9 +1608,12 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           $("#x-show-review").style.display = "none";
           $("#review-box").style.display = "none";
           $("#review-box").innerHTML = "";
-          $("#x-total").textContent = String(exam.questions.length);
-          $("#x-idx").textContent = String(exam.idx+1);
-          $("#x-timer").textContent = fmt(exam.tLeft);
+          const totalEl = document.getElementById("x-total");
+          if (totalEl) totalEl.textContent = String(exam.questions.length);
+          const idxEl = document.getElementById("x-idx");
+          if (idxEl) idxEl.textContent = String(exam.idx + 1);
+          const timerEl = document.getElementById("x-timer");
+          if (timerEl) timerEl.textContent = fmt(exam.tLeft);
           const q = exam.questions[exam.idx];
           const stemEl = document.getElementById("x-stem");
           if (stemEl) stemEl.textContent = q.stem;
@@ -1639,12 +1642,14 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
               box.appendChild(opt);
             }
           }
-          $("#x-msg").textContent = chosen ? ("پاسخ انتخابی: "+chosen) : "بدون پاسخ";
+          const msgEl = document.getElementById("x-msg");
+          if (msgEl) msgEl.textContent = chosen ? ("پاسخ انتخابی: " + chosen) : "بدون پاسخ";
         }
         function tick() {
           if (!exam) return;
           exam.tLeft--;
-          $("#x-timer").textContent = fmt(exam.tLeft);
+          const timerEl = document.getElementById("x-timer");
+          if (timerEl) timerEl.textContent = fmt(exam.tLeft);
           if (exam.tLeft <= 0) submitExam();
         }
         async function startExam() {
@@ -1714,7 +1719,6 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
           for (const it of d.data) {
             const wrap = document.createElement("div");
             wrap.className = "question stack-3";
-            if (idx > 0) wrap.style.marginTop = "var(--s-3)";
 
             const head = document.createElement("div");
             head.style.display = "flex";
@@ -1731,15 +1735,17 @@ export function routeStudent(req: Request, url: URL, env?: any): Response | null
             status.className = "badge";
             let statusClass = "badge-warn";
             let statusText = "بدون پاسخ";
-            if (it.isCorrect === true) {
-              statusClass = "badge-success";
-              statusText = "پاسخ صحیح";
-            } else if (it.isCorrect === false && it.userChoice) {
-              statusClass = "badge-danger";
-              statusText = "پاسخ نادرست";
-            } else if (it.userChoice) {
-              statusClass = null;
-              statusText = "پاسخ انتخابی";
+            if (it.userChoice) {
+              if (it.isCorrect === true) {
+                statusClass = "badge-success";
+                statusText = "پاسخ صحیح";
+              } else if (it.isCorrect === false) {
+                statusClass = "badge-danger";
+                statusText = "پاسخ نادرست";
+              } else {
+                statusClass = null;
+                statusText = "پاسخ انتخابی";
+              }
             }
             if (statusClass) status.classList.add(statusClass);
             status.textContent = statusText;
