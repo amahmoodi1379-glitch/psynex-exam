@@ -88,102 +88,148 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
   if (p === "/admin") {
     const body = `
       <style>
-        .tabbar button,
-        .tabbar a{margin:0 4px;padding:6px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;display:inline-flex;align-items:center;text-decoration:none;color:inherit}
-        .tabbar button.active{background:#222;color:#fff;border-color:#222}
-        .tabsec{display:none}
+        .admin-root{padding-block:var(--s-4);}
+        .admin-root h1{margin:0;}
+        .tabbar{display:flex;flex-wrap:wrap;gap:var(--s-2);} 
+        .tabbar .btn{background:#141826;border-color:var(--border);color:var(--text);} 
+        .tabbar .btn.active{background:var(--primary);border-color:var(--primary);color:var(--primary-contrast);} 
+        .tabsec{display:none;}
+        .card.tabsec{gap:var(--s-3);} 
+        .field{display:flex;flex-direction:column;gap:var(--s-1);font-size:14px;}
+        .admin-form{display:grid;gap:var(--s-3);} 
+        .options-grid{display:grid;gap:var(--s-3);} 
+        .admin-search{display:flex;flex-wrap:wrap;gap:var(--s-2);align-items:flex-end;}
+        .admin-search .field{flex:1 1 200px;}
+        .admin-status{margin-top:var(--s-2);} 
+        .admin-table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;} 
+        .admin-table th,.admin-table td{padding:var(--s-2);border-bottom:1px solid var(--border);text-align:right;vertical-align:top;}
+        .admin-table tbody tr:last-child td{border-bottom:none;}
+        dialog{border:none;border-radius:var(--r-lg);padding:0;background:transparent;}
+        dialog::backdrop{background:rgba(6,8,12,0.65);} 
+        #edit-form{background:var(--surface);padding:var(--s-4);display:grid;gap:var(--s-3);border-radius:var(--r-lg);border:1px solid var(--border);} 
+        #edit-options{display:grid;gap:var(--s-3);} 
+        #edit-actions{display:flex;gap:var(--s-2);justify-content:flex-end;} 
       </style>
 
-      <h1>پنل ادمین</h1>
-      <div class="tabbar">
-        <button data-tab="tab-konkur" class="active">ایجاد تست کنکور</button>
-        <button data-tab="tab-talifi">ایجاد تست تالیفی</button>
-        <button data-tab="tab-qa">ایجاد پرسش و پاسخ</button>
-        <button data-tab="tab-manage">مدیریت سوالات</button>
-        <a href="/admin/taxonomy">مدیریت طبقه‌بندی</a>
-      </div>
+      <div class="container stack-4 admin-root">
+        <h1>پنل ادمین</h1>
+        <div class="card">
+          <div class="tabbar">
+            <button data-tab="tab-konkur" class="btn btn-ghost active">ایجاد تست کنکور</button>
+            <button data-tab="tab-talifi" class="btn btn-ghost">ایجاد تست تالیفی</button>
+            <button data-tab="tab-qa" class="btn btn-ghost">ایجاد پرسش و پاسخ</button>
+            <button data-tab="tab-manage" class="btn btn-ghost">مدیریت سوالات</button>
+            <a class="btn btn-ghost" href="/admin/taxonomy">مدیریت طبقه‌بندی</a>
+          </div>
+        </div>
 
-      <!-- تب کنکور -->
-      <div class="card tabsec" id="tab-konkur" style="display:block">
-        <b>ایجاد تست کنکور</b>
-        ${formHtml("/api/admin/create?type=konkur", true, "k")}
-        <pre id="echo-konkur" class="muted"></pre>
-      </div>
+        <!-- تب کنکور -->
+        <div class="card tabsec stack-3" id="tab-konkur" style="display:block">
+          <b>ایجاد تست کنکور</b>
+          ${formHtml("/api/admin/create?type=konkur", true, "k")}
+          <pre id="echo-konkur" class="muted"></pre>
+        </div>
 
-      <!-- تب تالیفی -->
-      <div class="card tabsec" id="tab-talifi">
-        <b>ایجاد تست تالیفی</b>
-        ${formHtml("/api/admin/create?type=talifi", true, "t")}
-        <pre id="echo-talifi" class="muted"></pre>
-      </div>
+        <!-- تب تالیفی -->
+        <div class="card tabsec stack-3" id="tab-talifi">
+          <b>ایجاد تست تالیفی</b>
+          ${formHtml("/api/admin/create?type=talifi", true, "t")}
+          <pre id="echo-talifi" class="muted"></pre>
+        </div>
 
-      <!-- تب پرسش و پاسخ -->
-      <div class="card tabsec" id="tab-qa">
-        <b>ایجاد پرسش و پاسخ</b>
-        ${formHtml("/api/admin/create?type=qa", false, "q")}
-        <pre id="echo-qa" class="muted"></pre>
-      </div>
+        <!-- تب پرسش و پاسخ -->
+        <div class="card tabsec stack-3" id="tab-qa">
+          <b>ایجاد پرسش و پاسخ</b>
+          ${formHtml("/api/admin/create?type=qa", false, "q")}
+          <pre id="echo-qa" class="muted"></pre>
+        </div>
 
-      <!-- تب مدیریت -->
-      <div class="card tabsec" id="tab-manage">
-        <b>مدیریت سوالات</b>
-        <form id="m-form" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap">
-          <label>نوع:<br>
-            <select id="m-type" name="type">
-              <option value="konkur">کنکور</option>
-              <option value="talifi">تالیفی</option>
-              <option value="qa">پرسش و پاسخ</option>
-            </select>
-          </label>
-          <label>شناسه (اختیاری):<br>
-            <input id="m-id" name="id" placeholder="UUID" style="min-width:180px">
-          </label>
-          <label>عبارت متن (اختیاری):<br>
-            <input id="m-query" name="query" placeholder="بخشی از صورت سوال" style="min-width:220px">
-          </label>
-          <button type="submit" id="m-load">جست‌وجو</button>
-        </form>
-        <div id="m-status" class="muted" style="margin-top:6px"></div>
-        <div style="margin-top:10px">
-          <table border="1" cellpadding="6" style="width:100%; border-collapse:collapse">
-            <thead><tr><th>شناسه</th><th>صورت سوال</th><th>نوع</th><th>عملیات</th></tr></thead>
-            <tbody id="m-list"></tbody>
-          </table>
-          <dialog id="edit-dialog">
-            <form id="edit-form">
-              <input type="hidden" name="id" id="edit-id">
-              <input type="hidden" name="type" id="edit-type">
-              <div><label>رشته</label> <select id="edit-major" name="majorId" required></select></div>
-              <div><label>مقطع</label> <select id="edit-degree" name="degreeId"></select></div>
-              <div><label>وزارتخانه</label> <select id="edit-ministry" name="ministryId"></select></div>
-              <div><label>سال کنکور</label> <select id="edit-examYear" name="examYearId"></select></div>
-              <div><label>درس</label> <select id="edit-course" name="courseId" required></select></div>
-              <div><label>منبع</label> <select id="edit-source" name="sourceId"></select></div>
-              <div><label>فصل</label> <select id="edit-chapter" name="chapterId"></select></div>
-              <div><label>صورت سوال</label><br><textarea id="edit-stem" name="stem" required rows="3" style="width:100%"></textarea></div>
-              <div id="edit-options">
-                <div><label>گزینه 1</label><input id="edit-opt1" name="opt1" required style="width:100%"></div>
-                <div><label>گزینه 2</label><input id="edit-opt2" name="opt2" required style="width:100%"></div>
-                <div><label>گزینه 3</label><input id="edit-opt3" name="opt3" required style="width:100%"></div>
-                <div><label>گزینه 4</label><input id="edit-opt4" name="opt4" required style="width:100%"></div>
-                <div>
-                  <label>گزینه صحیح</label>
-                  <select id="edit-correctLabel" name="correctLabel" required>
-                    <option value="1">1</option><option value="2">2</option>
-                    <option value="3">3</option><option value="4">4</option>
-                  </select>
+        <!-- تب مدیریت -->
+        <div class="card tabsec stack-3" id="tab-manage">
+          <b>مدیریت سوالات</b>
+          <form id="m-form" class="admin-search">
+            <label class="field">نوع
+              <select id="m-type" name="type" class="select">
+                <option value="konkur">کنکور</option>
+                <option value="talifi">تالیفی</option>
+                <option value="qa">پرسش و پاسخ</option>
+              </select>
+            </label>
+            <label class="field">شناسه (اختیاری)
+              <input id="m-id" name="id" placeholder="UUID" class="input">
+            </label>
+            <label class="field">عبارت متن (اختیاری)
+              <input id="m-query" name="query" placeholder="بخشی از صورت سوال" class="input">
+            </label>
+            <button type="submit" id="m-load" class="btn btn-primary">جست‌وجو</button>
+          </form>
+          <div id="m-status" class="muted admin-status"></div>
+          <div class="stack-3">
+            <table class="admin-table">
+              <thead><tr><th>شناسه</th><th>صورت سوال</th><th>نوع</th><th>عملیات</th></tr></thead>
+              <tbody id="m-list"></tbody>
+            </table>
+            <dialog id="edit-dialog">
+              <form id="edit-form">
+                <input type="hidden" name="id" id="edit-id">
+                <input type="hidden" name="type" id="edit-type">
+                <label class="field">رشته
+                  <select id="edit-major" name="majorId" class="select" required></select>
+                </label>
+                <label class="field">مقطع
+                  <select id="edit-degree" name="degreeId" class="select"></select>
+                </label>
+                <label class="field">وزارتخانه
+                  <select id="edit-ministry" name="ministryId" class="select"></select>
+                </label>
+                <label class="field">سال کنکور
+                  <select id="edit-examYear" name="examYearId" class="select"></select>
+                </label>
+                <label class="field">درس
+                  <select id="edit-course" name="courseId" class="select" required></select>
+                </label>
+                <label class="field">منبع
+                  <select id="edit-source" name="sourceId" class="select"></select>
+                </label>
+                <label class="field">فصل
+                  <select id="edit-chapter" name="chapterId" class="select"></select>
+                </label>
+                <label class="field">صورت سوال
+                  <textarea id="edit-stem" name="stem" class="input" required rows="3"></textarea>
+                </label>
+                <div id="edit-options">
+                  <label class="field">گزینه 1
+                    <input id="edit-opt1" name="opt1" class="input" required>
+                  </label>
+                  <label class="field">گزینه 2
+                    <input id="edit-opt2" name="opt2" class="input" required>
+                  </label>
+                  <label class="field">گزینه 3
+                    <input id="edit-opt3" name="opt3" class="input" required>
+                  </label>
+                  <label class="field">گزینه 4
+                    <input id="edit-opt4" name="opt4" class="input" required>
+                  </label>
+                  <label class="field">گزینه صحیح
+                    <select id="edit-correctLabel" name="correctLabel" class="select" required>
+                      <option value="1">1</option><option value="2">2</option>
+                      <option value="3">3</option><option value="4">4</option>
+                    </select>
+                  </label>
                 </div>
-              </div>
-              <div><label>پاسخنامه تشریحی</label><br><textarea id="edit-expl" name="expl" rows="3" style="width:100%"></textarea></div>
-              <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px">
-                <button type="button" id="edit-cancel">انصراف</button>
-                <button type="submit">ذخیره</button>
-              </div>
-            </form>
-          </dialog>
+                <label class="field">پاسخنامه تشریحی
+                  <textarea id="edit-expl" name="expl" class="input" rows="3"></textarea>
+                </label>
+                <div id="edit-actions">
+                  <button type="button" id="edit-cancel" class="btn btn-ghost">انصراف</button>
+                  <button type="submit" class="btn btn-primary">ذخیره</button>
+                </div>
+              </form>
+            </dialog>
+          </div>
         </div>
       </div>
-
+      
       <script>
         // تب‌ها
         const tabs = document.querySelectorAll('.tabbar button');
@@ -527,36 +573,63 @@ function formToQuestionPayload(fd: FormData, type: QuestionType): Omit<Question,
 // فرم‌ساز
 function formHtml(action: string, withOptions: boolean, root: "k"|"t"|"q") {
   const konkurMeta = root === "k" ? `
-    <div><label>مقطع</label> <select id="${root}-degree" name="degreeId"></select></div>
-    <div><label>وزارتخانه</label> <select id="${root}-ministry" name="ministryId"></select></div>
-    <div><label>سال کنکور</label> <select id="${root}-examYear" name="examYearId"></select></div>
+    <label class="field">مقطع
+      <select id="${root}-degree" name="degreeId" class="select"></select>
+    </label>
+    <label class="field">وزارتخانه
+      <select id="${root}-ministry" name="ministryId" class="select"></select>
+    </label>
+    <label class="field">سال کنکور
+      <select id="${root}-examYear" name="examYearId" class="select"></select>
+    </label>
   ` : "";
   const optionalSourceChapter = root === "k" ? "" : `
-    <div><label>منبع</label> <select id="${root}-source" name="sourceId"></select></div>
-    <div><label>فصل</label> <select id="${root}-chapter" name="chapterId"></select></div>
+    <label class="field">منبع
+      <select id="${root}-source" name="sourceId" class="select"></select>
+    </label>
+    <label class="field">فصل
+      <select id="${root}-chapter" name="chapterId" class="select"></select>
+    </label>
   `;
   return `
-  <form id="form-${root}" method="post" action="${action}">
-    <div><label>رشته</label> <select id="${root}-major" name="majorId" required></select></div>
+  <form id="form-${root}" method="post" action="${action}" class="admin-form">
+    <label class="field">رشته
+      <select id="${root}-major" name="majorId" class="select" required></select>
+    </label>
     ${konkurMeta}
-    <div><label>درس</label> <select id="${root}-course" name="courseId" required></select></div>
+    <label class="field">درس
+      <select id="${root}-course" name="courseId" class="select" required></select>
+    </label>
     ${optionalSourceChapter}
 
-    <div><label>صورت سوال</label><br><textarea name="stem" required rows="3" style="width:100%"></textarea></div>
+    <label class="field">صورت سوال
+      <textarea name="stem" class="input" required rows="3"></textarea>
+    </label>
     ${withOptions ? `
-      <div><label>گزینه 1</label><input name="opt1" required style="width:100%"></div>
-      <div><label>گزینه 2</label><input name="opt2" required style="width:100%"></div>
-      <div><label>گزینه 3</label><input name="opt3" required style="width:100%"></div>
-      <div><label>گزینه 4</label><input name="opt4" required style="width:100%"></div>
-      <div>
-        <label>گزینه صحیح</label>
-        <select name="correctLabel" required>
-          <option value="1">1</option><option value="2">2</option>
-          <option value="3">3</option><option value="4">4</option>
-        </select>
+      <div class="options-grid">
+        <label class="field">گزینه 1
+          <input name="opt1" class="input" required>
+        </label>
+        <label class="field">گزینه 2
+          <input name="opt2" class="input" required>
+        </label>
+        <label class="field">گزینه 3
+          <input name="opt3" class="input" required>
+        </label>
+        <label class="field">گزینه 4
+          <input name="opt4" class="input" required>
+        </label>
+        <label class="field">گزینه صحیح
+          <select name="correctLabel" class="select" required>
+            <option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option>
+          </select>
+        </label>
       </div>` : ``}
-    <div><label>پاسخنامه تشریحی</label><br><textarea name="expl" rows="3" style="width:100%"></textarea></div>
-    <button type="submit">ثبت</button>
+    <label class="field">پاسخنامه تشریحی
+      <textarea name="expl" class="input" rows="3"></textarea>
+    </label>
+    <button type="submit" class="btn btn-primary">ثبت</button>
   </form>`;
 }
 
