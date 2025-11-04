@@ -346,12 +346,10 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
                 if (el instanceof HTMLInputElement) {
                   if (el.type === "radio") {
                     el.checked = false;
-                    return;
+                  } else {
+                    el.value = "";
                   }
-                  el.value = "";
-                  return;
-                }
-                if (el instanceof HTMLTextAreaElement) {
+                } else if (el instanceof HTMLTextAreaElement) {
                   el.value = "";
                 }
               });
