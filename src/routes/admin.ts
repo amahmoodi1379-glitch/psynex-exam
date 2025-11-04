@@ -19,7 +19,13 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
     return (async () => {
       const type = (url.searchParams.get("type") || "konkur") as QuestionType;
       const fd = await req.formData();
-      const payload = formToQuestionPayload(fd, type);
+      let payload;
+      try {
+        payload = formToQuestionPayload(fd, type);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "invalid_payload";
+        return json({ ok: false, error: message }, 400);
+      }
       if (!env || !env.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
       const id = await createQuestion(env, payload);
       return json({ ok: true, id, type });
@@ -45,7 +51,13 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
       const id = String(url.searchParams.get("id") || fd.get("id") || "");
       if (!id) return json({ ok: false, error: "id required" }, 400);
       if (!env || !env.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
-      const payload = formToQuestionPayload(fd, type);
+      let payload;
+      try {
+        payload = formToQuestionPayload(fd, type);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "invalid_payload";
+        return json({ ok: false, error: message }, 400);
+      }
       const { type: _ignore, ...updates } = payload;
       const updated = await updateQuestion(env, type, id, updates);
       if (!updated) return json({ ok: false, error: "not_found" }, 404);
@@ -92,6 +104,8 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         .tabbar a{margin:0 4px;padding:6px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;display:inline-flex;align-items:center;text-decoration:none;color:inherit}
         .tabbar button.active{background:#222;color:#fff;border-color:#222}
         .tabsec{display:none}
+        .option-chooser{display:flex;align-items:center;gap:8px;margin-top:6px}
+        .option-chooser label{display:flex;align-items:center;gap:4px;margin:0;white-space:nowrap}
       </style>
 
       <h1>پنل ادمین</h1>
@@ -162,16 +176,33 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
               <div><label>فصل</label> <select id="edit-chapter" name="chapterId"></select></div>
               <div><label>صورت سوال</label><br><textarea id="edit-stem" name="stem" required rows="3" style="width:100%"></textarea></div>
               <div id="edit-options">
-                <div><label>گزینه 1</label><input id="edit-opt1" name="opt1" required style="width:100%"></div>
-                <div><label>گزینه 2</label><input id="edit-opt2" name="opt2" required style="width:100%"></div>
-                <div><label>گزینه 3</label><input id="edit-opt3" name="opt3" required style="width:100%"></div>
-                <div><label>گزینه 4</label><input id="edit-opt4" name="opt4" required style="width:100%"></div>
                 <div>
-                  <label>گزینه صحیح</label>
-                  <select id="edit-correctLabel" name="correctLabel" required>
-                    <option value="1">1</option><option value="2">2</option>
-                    <option value="3">3</option><option value="4">4</option>
-                  </select>
+                  <label>گزینه 1</label>
+                  <div class="option-chooser">
+                    <label><input type="radio" id="edit-correct-1" name="correctLabel" value="1" required> صحیح</label>
+                    <input id="edit-opt1" name="opt1" required style="width:100%">
+                  </div>
+                </div>
+                <div>
+                  <label>گزینه 2</label>
+                  <div class="option-chooser">
+                    <label><input type="radio" id="edit-correct-2" name="correctLabel" value="2" required> صحیح</label>
+                    <input id="edit-opt2" name="opt2" required style="width:100%">
+                  </div>
+                </div>
+                <div>
+                  <label>گزینه 3</label>
+                  <div class="option-chooser">
+                    <label><input type="radio" id="edit-correct-3" name="correctLabel" value="3" required> صحیح</label>
+                    <input id="edit-opt3" name="opt3" required style="width:100%">
+                  </div>
+                </div>
+                <div>
+                  <label>گزینه 4</label>
+                  <div class="option-chooser">
+                    <label><input type="radio" id="edit-correct-4" name="correctLabel" value="4" required> صحیح</label>
+                    <input id="edit-opt4" name="opt4" required style="width:100%">
+                  </div>
                 </div>
               </div>
               <div><label>پاسخنامه تشریحی</label><br><textarea id="edit-expl" name="expl" rows="3" style="width:100%"></textarea></div>
@@ -287,11 +318,15 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         function wireForm(formId, echoId) {
           const form = document.getElementById(formId);
           const echoEl = document.getElementById(echoId);
-          const resettableSelectors = ["textarea", 'input:not([type="hidden"])', 'select[name="correctLabel"]'];
+          const resettableSelectors = ["textarea", 'input:not([type="hidden"])'];
           if (!form || !echoEl) return;
           const resettableQuery = resettableSelectors.join(",");
           form.addEventListener("submit", async (ev) => {
             ev.preventDefault();
+            if (!form.checkValidity()) {
+              form.reportValidity();
+              return;
+            }
             const fd = new FormData(form);
             let data;
             try {
@@ -308,7 +343,13 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
                   el.selectedIndex = 0;
                   return;
                 }
-                if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+                if (el instanceof HTMLInputElement) {
+                  if (el.type === "radio") {
+                    el.checked = false;
+                  } else {
+                    el.value = "";
+                  }
+                } else if (el instanceof HTMLTextAreaElement) {
                   el.value = "";
                 }
               });
@@ -343,6 +384,11 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
               el.required = !isQA;
             }
           });
+          if (isQA) {
+            editOptions.querySelectorAll('input[type="radio"][name="correctLabel"]').forEach((el) => {
+              el.checked = false;
+            });
+          }
         }
 
         async function populateEditTaxonomy(q) {
@@ -380,19 +426,16 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
           await populateEditTaxonomy(q);
           toggleEditOptions(q.type);
 
-          if (q.options && q.options.length) {
-            const map = new Map(q.options.map(o => [o.label, o.text]));
-            document.getElementById("edit-opt1").value = map.get("1") || "";
-            document.getElementById("edit-opt2").value = map.get("2") || "";
-            document.getElementById("edit-opt3").value = map.get("3") || "";
-            document.getElementById("edit-opt4").value = map.get("4") || "";
-          } else {
-            document.getElementById("edit-opt1").value = "";
-            document.getElementById("edit-opt2").value = "";
-            document.getElementById("edit-opt3").value = "";
-            document.getElementById("edit-opt4").value = "";
-          }
-          document.getElementById("edit-correctLabel").value = q.correctLabel || "1";
+          const optionMap = q.options && q.options.length ? new Map(q.options.map(o => [o.label, o.text])) : null;
+          document.getElementById("edit-opt1").value = optionMap?.get("1") || "";
+          document.getElementById("edit-opt2").value = optionMap?.get("2") || "";
+          document.getElementById("edit-opt3").value = optionMap?.get("3") || "";
+          document.getElementById("edit-opt4").value = optionMap?.get("4") || "";
+
+          const correctValue = q.correctLabel ? String(q.correctLabel) : "";
+          editForm.querySelectorAll('input[type="radio"][name="correctLabel"]').forEach((el) => {
+            el.checked = el.value === correctValue;
+          });
 
           if (typeof editDialog.showModal === "function") editDialog.showModal();
           else editDialog.style.display = "block";
@@ -512,13 +555,17 @@ function formToQuestionPayload(fd: FormData, type: QuestionType): Omit<Question,
   payload.expl = optionalField(fd, "expl");
 
   if (type !== "qa") {
+    const correctRaw = fd.get("correctLabel");
+    if (!correctRaw) {
+      throw new Error("گزینه صحیح انتخاب نشده است");
+    }
     payload.options = [
       { label: "1", text: String(fd.get("opt1") || "") },
       { label: "2", text: String(fd.get("opt2") || "") },
       { label: "3", text: String(fd.get("opt3") || "") },
       { label: "4", text: String(fd.get("opt4") || "") },
     ];
-    payload.correctLabel = String(fd.get("correctLabel") || "1") as Question["correctLabel"];
+    payload.correctLabel = String(correctRaw) as Question["correctLabel"];
   }
 
   return payload;
@@ -544,16 +591,33 @@ function formHtml(action: string, withOptions: boolean, root: "k"|"t"|"q") {
 
     <div><label>صورت سوال</label><br><textarea name="stem" required rows="3" style="width:100%"></textarea></div>
     ${withOptions ? `
-      <div><label>گزینه 1</label><input name="opt1" required style="width:100%"></div>
-      <div><label>گزینه 2</label><input name="opt2" required style="width:100%"></div>
-      <div><label>گزینه 3</label><input name="opt3" required style="width:100%"></div>
-      <div><label>گزینه 4</label><input name="opt4" required style="width:100%"></div>
       <div>
-        <label>گزینه صحیح</label>
-        <select name="correctLabel" required>
-          <option value="1">1</option><option value="2">2</option>
-          <option value="3">3</option><option value="4">4</option>
-        </select>
+        <label>گزینه 1</label>
+        <div class="option-chooser">
+          <label><input type="radio" name="correctLabel" value="1" required> صحیح</label>
+          <input name="opt1" required style="width:100%">
+        </div>
+      </div>
+      <div>
+        <label>گزینه 2</label>
+        <div class="option-chooser">
+          <label><input type="radio" name="correctLabel" value="2" required> صحیح</label>
+          <input name="opt2" required style="width:100%">
+        </div>
+      </div>
+      <div>
+        <label>گزینه 3</label>
+        <div class="option-chooser">
+          <label><input type="radio" name="correctLabel" value="3" required> صحیح</label>
+          <input name="opt3" required style="width:100%">
+        </div>
+      </div>
+      <div>
+        <label>گزینه 4</label>
+        <div class="option-chooser">
+          <label><input type="radio" name="correctLabel" value="4" required> صحیح</label>
+          <input name="opt4" required style="width:100%">
+        </div>
       </div>` : ``}
     <div><label>پاسخنامه تشریحی</label><br><textarea name="expl" rows="3" style="width:100%"></textarea></div>
     <button type="submit">ثبت</button>
