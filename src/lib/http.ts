@@ -14,7 +14,6 @@ export function page(title: string, body: string): string {
       <div class="row">
         <a class="brand" href="/">پرسینکس</a>
         <nav class="nav">
-          <a href="/">خانه</a>
           <a href="/admin">ادمین</a>
           <a href="/student">دانشجو</a>
           <a href="/management">مدیریت</a>
