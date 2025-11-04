@@ -84,6 +84,9 @@ a:hover{ text-decoration: underline; }
 .card-title{ font-size:18px; font-weight:700; }
 .card-meta{ display:flex; flex-wrap:wrap; gap:var(--s-2); color:var(--muted); font-size:13px; }
 .badge{ display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; background:#1a1f2e; border:1px solid var(--border); color:var(--muted); }
+.badge-success{ border-color:color-mix(in oklab, var(--success) 40%, var(--border)); color:color-mix(in oklab, var(--success) 80%, white); background:color-mix(in oklab, var(--success) 15%, #1a1f2e); }
+.badge-warn{ border-color:color-mix(in oklab, var(--warn) 40%, var(--border)); color:color-mix(in oklab, var(--warn) 80%, white); background:color-mix(in oklab, var(--warn) 18%, #1a1f2e); }
+.badge-danger{ border-color:color-mix(in oklab, var(--danger) 40%, var(--border)); color:color-mix(in oklab, var(--danger) 80%, white); background:color-mix(in oklab, var(--danger) 18%, #1a1f2e); }
 .clamp-2{ display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 
 /* 8) Test taking page */
@@ -91,13 +94,17 @@ a:hover{ text-decoration: underline; }
 .progress>.bar{ height:100%; width:0%; background:var(--primary); transition:width .25s ease; }
 .question{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:var(--s-4); line-height:1.8; }
 .options{ display:grid; gap:var(--s-2); margin-top:var(--s-3); }
-.option{
+.option{ 
   display:flex; align-items:center; gap:var(--s-3); background:#141826; border:1px solid var(--border);
   border-radius:var(--r-md); padding:12px; cursor:pointer; transition:background .15s ease, border-color .15s ease;
 }
 .option:hover{ background:#182033; }
 .option input{ accent-color:var(--primary); transform:scale(1.1); }
 .option.disabled{ opacity:.6; pointer-events:none; }
+.option.selected{ border-color:color-mix(in oklab, var(--primary) 55%, var(--border)); background:color-mix(in oklab, var(--primary) 18%, #141826); }
+.option.correct{ border-color:color-mix(in oklab, var(--success) 55%, var(--border)); background:color-mix(in oklab, var(--success) 18%, #141826); }
+.option.incorrect{ border-color:color-mix(in oklab, var(--danger) 55%, var(--border)); background:color-mix(in oklab, var(--danger) 18%, #141826); }
+.option-chips{ margin-inline-start:auto; display:flex; align-items:center; gap:var(--s-2); flex-wrap:wrap; }
 .toolbar{ display:flex; align-items:center; justify-content:space-between; gap:var(--s-3); margin-top:var(--s-4); }
 
 /* 9) Results */
