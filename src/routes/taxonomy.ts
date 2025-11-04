@@ -369,9 +369,18 @@ export function routeTaxonomy(req: Request, url: URL, env?: any): Response | nul
             return fill("s-list", "/api/taxonomy/sources?courseId="+encodeURIComponent(cid));
           }
           async function loadChapters(){
+            const selectEl = /** @type {HTMLSelectElement} */ (document.getElementById("ch-source"));
+            if (!selectEl) return;
+
+            const previousSelection = selectEl.value;
             const sources = await fill("ch-source", "/api/taxonomy/sources");
-            const sid = document.getElementById("ch-source").value || (sources[0]?.id||"");
-            return fill("ch-list", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(sid));
+
+            const selectedSourceId = (previousSelection && sources.some(s=>s.id===previousSelection))
+              ? previousSelection
+              : (sources[0]?.id || "");
+            selectEl.value = selectedSourceId;
+
+            return fill("ch-list", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(selectedSourceId));
           }
 
           // add/delete handlers
