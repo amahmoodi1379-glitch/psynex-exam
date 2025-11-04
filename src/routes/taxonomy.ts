@@ -375,16 +375,10 @@ export function routeTaxonomy(req: Request, url: URL, env?: any): Response | nul
             const previousSelection = selectEl.value;
             const sources = await fill("ch-source", "/api/taxonomy/sources");
 
-            let selectedSourceId = "";
-            if (previousSelection && sources.some(s=>s.id===previousSelection)) {
-              selectEl.value = previousSelection;
-              selectedSourceId = previousSelection;
-            } else if (sources.length) {
-              selectedSourceId = sources[0].id;
-              selectEl.value = selectedSourceId;
-            } else {
-              selectEl.value = "";
-            }
+            const selectedSourceId = (previousSelection && sources.some(s=>s.id===previousSelection))
+              ? previousSelection
+              : (sources[0]?.id || "");
+            selectEl.value = selectedSourceId;
 
             return fill("ch-list", "/api/taxonomy/chapters?sourceId="+encodeURIComponent(selectedSourceId));
           }
