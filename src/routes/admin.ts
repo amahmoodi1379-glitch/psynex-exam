@@ -234,31 +234,38 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
           placeholder.selected = true;
           el.appendChild(placeholder);
         }
+        function appendPlaceholder(el, { selected } = { selected: true }) {
+          if (!(el instanceof HTMLSelectElement)) return;
+          const placeholder = document.createElement("option");
+          placeholder.value = "";
+          placeholder.textContent = "یک گزینه را انتخاب کنید";
+          placeholder.disabled = true;
+          placeholder.selected = !!selected;
+          el.insertBefore(placeholder, el.firstChild);
+        }
         async function fillSelect(id, url, valueKey = "id", labelKey = "name", selectedValue) {
           const el = document.getElementById(id);
           if (!(el instanceof HTMLSelectElement)) return;
+          const selectedKey = typeof selectedValue === "undefined" ? undefined : String(selectedValue || "");
           el.innerHTML = "";
+          if (!selectedKey) {
+            appendPlaceholder(el);
+          }
           const res = await fetch(url);
           const items = await res.json();
+          let hasSelected = false;
           for (const it of items) {
             const opt = document.createElement("option");
             opt.value = it[valueKey];
             opt.textContent = it[labelKey];
-            if (typeof selectedValue !== "undefined" && String(opt.value) === String(selectedValue)) {
+            if (selectedKey && String(opt.value) === selectedKey) {
               opt.selected = true;
+              hasSelected = true;
             }
             el.appendChild(opt);
           }
-          if (typeof selectedValue !== "undefined" && el.options.length) {
-            const hasSelected = Array.from(el.options).some(o => o.selected);
-            if (!hasSelected) {
-              const placeholder = document.createElement("option");
-              placeholder.value = "";
-              placeholder.textContent = "یک گزینه را انتخاب کنید";
-              placeholder.disabled = true;
-              placeholder.selected = true;
-              el.insertBefore(placeholder, el.firstChild);
-            }
+          if (selectedKey && !hasSelected) {
+            appendPlaceholder(el);
           }
         }
         async function initCascades(rootId) {
@@ -294,12 +301,23 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
           const updateSources = async () => {
             if (!sourceEl) return;
             const courseId = courseEl.value || "";
+            if (!courseId) {
+              resetSelectOptions(sourceEl);
+              resetSelectOptions(chapterEl);
+              return;
+            }
             await fillSelect(rootId+"-source", "/api/taxonomy/sources?courseId=" + courseId);
             await updateChapters();
           };
 
           const updateCourses = async () => {
             const majorId = majorEl.value || "";
+            if (!majorId) {
+              resetSelectOptions(courseEl);
+              resetSelectOptions(sourceEl);
+              resetSelectOptions(chapterEl);
+              return;
+            }
             await fillSelect(rootId+"-course", "/api/taxonomy/courses?majorId=" + majorId);
             await updateSources();
           };
