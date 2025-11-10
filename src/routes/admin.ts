@@ -234,7 +234,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
           placeholder.selected = true;
           el.appendChild(placeholder);
         }
-        function appendPlaceholder(el, { selected } = { selected: true }) {
+        function appendPlaceholder(el, { selected = true } = {}) {
           if (!(el instanceof HTMLSelectElement)) return;
           const placeholder = document.createElement("option");
           placeholder.value = "";
