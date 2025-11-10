@@ -155,7 +155,7 @@ export function routeAuth(req: Request, url: URL, env?: any): Response | null {
         <h2>ثبت‌نام</h2>
         <p class="muted">فقط ایمیل‌های Gmail مجاز هستند. ابتدا ایمیل را تأیید کنید یا از Google استفاده کنید.</p>
         <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
-          <button id="googleBtn" style="background:#fff; color:#444; border:1px solid #ddd; padding:8px 12px; display:flex; align-items:center; gap:6px">
+          <button id="googleBtn" class="btn-google">
             <span>ورود با Google</span>
           </button>
         </div>
