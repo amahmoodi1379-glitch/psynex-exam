@@ -104,8 +104,12 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         .tabbar a{margin:0 4px;padding:6px 10px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;display:inline-flex;align-items:center;text-decoration:none;color:inherit}
         .tabbar button.active{background:#222;color:#fff;border-color:#222}
         .tabsec{display:none}
-        .option-chooser{display:flex;align-items:center;gap:8px;margin-top:6px}
-        .option-chooser label{display:flex;align-items:center;gap:4px;margin:0;white-space:nowrap}
+        .option-row{display:flex;align-items:center;gap:12px;margin-top:8px}
+        .option-row:first-child{margin-top:0}
+        .option-row label{margin:0}
+        .option-name{min-width:64px;white-space:nowrap}
+        .correct-radio{display:flex;align-items:center;justify-content:center;width:32px}
+        .option-input{flex:1}
       </style>
 
       <h1>پنل ادمین</h1>
@@ -176,33 +180,25 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
               <div><label>فصل</label> <select id="edit-chapter" name="chapterId"></select></div>
               <div><label>صورت سوال</label><br><textarea id="edit-stem" name="stem" required rows="3" style="width:100%"></textarea></div>
               <div id="edit-options">
-                <div>
-                  <label>گزینه 1</label>
-                  <div class="option-chooser">
-                    <label><input type="radio" id="edit-correct-1" name="correctLabel" value="1" required aria-label="انتخاب گزینه صحیح"></label>
-                    <input id="edit-opt1" name="opt1" required style="width:100%">
-                  </div>
+                <div class="option-row">
+                  <label class="option-name" for="edit-opt1">گزینه 1</label>
+                  <label class="correct-radio" for="edit-correct-1"><input type="radio" id="edit-correct-1" name="correctLabel" value="1" required aria-label="انتخاب گزینه صحیح"></label>
+                  <input class="option-input" id="edit-opt1" name="opt1" required>
                 </div>
-                <div>
-                  <label>گزینه 2</label>
-                  <div class="option-chooser">
-                    <label><input type="radio" id="edit-correct-2" name="correctLabel" value="2" required aria-label="انتخاب گزینه صحیح"></label>
-                    <input id="edit-opt2" name="opt2" required style="width:100%">
-                  </div>
+                <div class="option-row">
+                  <label class="option-name" for="edit-opt2">گزینه 2</label>
+                  <label class="correct-radio" for="edit-correct-2"><input type="radio" id="edit-correct-2" name="correctLabel" value="2" required aria-label="انتخاب گزینه صحیح"></label>
+                  <input class="option-input" id="edit-opt2" name="opt2" required>
                 </div>
-                <div>
-                  <label>گزینه 3</label>
-                  <div class="option-chooser">
-                    <label><input type="radio" id="edit-correct-3" name="correctLabel" value="3" required aria-label="انتخاب گزینه صحیح"></label>
-                    <input id="edit-opt3" name="opt3" required style="width:100%">
-                  </div>
+                <div class="option-row">
+                  <label class="option-name" for="edit-opt3">گزینه 3</label>
+                  <label class="correct-radio" for="edit-correct-3"><input type="radio" id="edit-correct-3" name="correctLabel" value="3" required aria-label="انتخاب گزینه صحیح"></label>
+                  <input class="option-input" id="edit-opt3" name="opt3" required>
                 </div>
-                <div>
-                  <label>گزینه 4</label>
-                  <div class="option-chooser">
-                    <label><input type="radio" id="edit-correct-4" name="correctLabel" value="4" required aria-label="انتخاب گزینه صحیح"></label>
-                    <input id="edit-opt4" name="opt4" required style="width:100%">
-                  </div>
+                <div class="option-row">
+                  <label class="option-name" for="edit-opt4">گزینه 4</label>
+                  <label class="correct-radio" for="edit-correct-4"><input type="radio" id="edit-correct-4" name="correctLabel" value="4" required aria-label="انتخاب گزینه صحیح"></label>
+                  <input class="option-input" id="edit-opt4" name="opt4" required>
                 </div>
               </div>
               <div><label>پاسخنامه تشریحی</label><br><textarea id="edit-expl" name="expl" rows="3" style="width:100%"></textarea></div>
@@ -591,33 +587,25 @@ function formHtml(action: string, withOptions: boolean, root: "k"|"t"|"q") {
 
     <div><label>صورت سوال</label><br><textarea name="stem" required rows="3" style="width:100%"></textarea></div>
     ${withOptions ? `
-      <div>
-        <label>گزینه 1</label>
-        <div class="option-chooser">
-          <label><input type="radio" name="correctLabel" value="1" required aria-label="انتخاب گزینه صحیح"></label>
-          <input name="opt1" required style="width:100%">
-        </div>
+      <div class="option-row">
+        <label class="option-name" for="${root}-opt1">گزینه 1</label>
+        <label class="correct-radio" for="${root}-correct-1"><input type="radio" id="${root}-correct-1" name="correctLabel" value="1" required aria-label="انتخاب گزینه صحیح"></label>
+        <input class="option-input" id="${root}-opt1" name="opt1" required>
       </div>
-      <div>
-        <label>گزینه 2</label>
-        <div class="option-chooser">
-          <label><input type="radio" name="correctLabel" value="2" required aria-label="انتخاب گزینه صحیح"></label>
-          <input name="opt2" required style="width:100%">
-        </div>
+      <div class="option-row">
+        <label class="option-name" for="${root}-opt2">گزینه 2</label>
+        <label class="correct-radio" for="${root}-correct-2"><input type="radio" id="${root}-correct-2" name="correctLabel" value="2" required aria-label="انتخاب گزینه صحیح"></label>
+        <input class="option-input" id="${root}-opt2" name="opt2" required>
       </div>
-      <div>
-        <label>گزینه 3</label>
-        <div class="option-chooser">
-          <label><input type="radio" name="correctLabel" value="3" required aria-label="انتخاب گزینه صحیح"></label>
-          <input name="opt3" required style="width:100%">
-        </div>
+      <div class="option-row">
+        <label class="option-name" for="${root}-opt3">گزینه 3</label>
+        <label class="correct-radio" for="${root}-correct-3"><input type="radio" id="${root}-correct-3" name="correctLabel" value="3" required aria-label="انتخاب گزینه صحیح"></label>
+        <input class="option-input" id="${root}-opt3" name="opt3" required>
       </div>
-      <div>
-        <label>گزینه 4</label>
-        <div class="option-chooser">
-          <label><input type="radio" name="correctLabel" value="4" required aria-label="انتخاب گزینه صحیح"></label>
-          <input name="opt4" required style="width:100%">
-        </div>
+      <div class="option-row">
+        <label class="option-name" for="${root}-opt4">گزینه 4</label>
+        <label class="correct-radio" for="${root}-correct-4"><input type="radio" id="${root}-correct-4" name="correctLabel" value="4" required aria-label="انتخاب گزینه صحیح"></label>
+        <input class="option-input" id="${root}-opt4" name="opt4" required>
       </div>` : ``}
     <div><label>پاسخنامه تشریحی</label><br><textarea name="expl" rows="3" style="width:100%"></textarea></div>
     <button type="submit">ثبت</button>
