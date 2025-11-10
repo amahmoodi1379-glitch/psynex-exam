@@ -589,22 +589,22 @@ function formHtml(action: string, withOptions: boolean, root: "k"|"t"|"q") {
     ${withOptions ? `
       <div class="option-row">
         <label class="option-name" for="${root}-opt1">گزینه 1</label>
-        <label class="correct-radio"><input type="radio" name="correctLabel" value="1" required aria-label="انتخاب گزینه صحیح"></label>
+        <label class="correct-radio" for="${root}-correct-1"><input type="radio" id="${root}-correct-1" name="correctLabel" value="1" required aria-label="انتخاب گزینه صحیح"></label>
         <input class="option-input" id="${root}-opt1" name="opt1" required>
       </div>
       <div class="option-row">
         <label class="option-name" for="${root}-opt2">گزینه 2</label>
-        <label class="correct-radio"><input type="radio" name="correctLabel" value="2" required aria-label="انتخاب گزینه صحیح"></label>
+        <label class="correct-radio" for="${root}-correct-2"><input type="radio" id="${root}-correct-2" name="correctLabel" value="2" required aria-label="انتخاب گزینه صحیح"></label>
         <input class="option-input" id="${root}-opt2" name="opt2" required>
       </div>
       <div class="option-row">
         <label class="option-name" for="${root}-opt3">گزینه 3</label>
-        <label class="correct-radio"><input type="radio" name="correctLabel" value="3" required aria-label="انتخاب گزینه صحیح"></label>
+        <label class="correct-radio" for="${root}-correct-3"><input type="radio" id="${root}-correct-3" name="correctLabel" value="3" required aria-label="انتخاب گزینه صحیح"></label>
         <input class="option-input" id="${root}-opt3" name="opt3" required>
       </div>
       <div class="option-row">
         <label class="option-name" for="${root}-opt4">گزینه 4</label>
-        <label class="correct-radio"><input type="radio" name="correctLabel" value="4" required aria-label="انتخاب گزینه صحیح"></label>
+        <label class="correct-radio" for="${root}-correct-4"><input type="radio" id="${root}-correct-4" name="correctLabel" value="4" required aria-label="انتخاب گزینه صحیح"></label>
         <input class="option-input" id="${root}-opt4" name="opt4" required>
       </div>` : ``}
     <div><label>پاسخنامه تشریحی</label><br><textarea name="expl" rows="3" style="width:100%"></textarea></div>
