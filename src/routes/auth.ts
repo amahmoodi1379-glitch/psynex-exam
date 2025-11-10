@@ -1,5 +1,5 @@
 // src/routes/auth.ts
-import { html, json } from "../lib/http";
+import { html, json, page } from "../lib/http";
 import { redirect, signJWT, getSessionUser } from "../lib/auth";
 import { getUserByEmail, upsertUser, setUserPassword, verifyUserPassword } from "../lib/users";
 
@@ -120,30 +120,30 @@ export function routeAuth(req: Request, url: URL, env?: any): Response | null {
   if (p === "/login" && req.method === "GET") {
     const r = url.searchParams.get("r") || "/student";
     const body = `
-      <h1>ورود</h1>
       <div class="card">
-        <div>ورود با ایمیل جیمیل و رمز عبور</div>
-        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
-          <input id="email" placeholder="you@gmail.com" style="min-width:260px">
+        <h2>ورود به حساب کاربری</h2>
+        <p class="muted">ورود با ایمیل جیمیل و رمز عبور</p>
+        <div style="margin-top:16px; display:flex; flex-wrap:wrap; gap:8px; align-items:center">
+          <input id="email" type="email" placeholder="you@gmail.com" style="min-width:260px">
           <input id="pass" type="password" placeholder="رمز عبور">
           <button id="loginBtn">ورود</button>
         </div>
-        <div class="muted" style="margin-top:6px">
+        <p class="muted" style="margin-top:12px">
           حساب ندارید؟ <a href="/signup?r=${encodeURIComponent(r)}">ثبت‌نام</a>
-        </div>
+        </p>
       </div>
       <script>
         document.getElementById('loginBtn').addEventListener('click', async ()=>{
           const email = (document.getElementById('email')).value.trim();
           const pass  = (document.getElementById('pass')).value;
-          const r = await fetch('/api/auth/login', { method:'POST', headers:{'content-type':'application/json'},
+          const resp = await fetch('/api/auth/login', { method:'POST', headers:{'content-type':'application/json'},
             body: JSON.stringify({ email, password: pass, r: '${r}' }) });
-          const d = await r.json();
+          const d = await resp.json();
           if(!d.ok) return alert(d.error||'خطا'); location.href = d.to || '${r}';
         });
       </script>
     `;
-    return html(body);
+    return html(page("ورود", body));
   }
 
   // ---------- صفحه ثبت‌نام دانشجو ----------
@@ -151,15 +151,15 @@ export function routeAuth(req: Request, url: URL, env?: any): Response | null {
     const allowed = (env.ALLOW_SELF_SIGNUP ?? "1") === "1";
     const r = url.searchParams.get("r") || "/student";
     const body = allowed ? `
-      <h1>ثبت‌نام</h1>
       <div class="card">
-        <div>فقط ایمیل‌های Gmail مجاز هستند. ابتدا ایمیل را تأیید کنید یا از Google استفاده کنید.</div>
+        <h2>ثبت‌نام</h2>
+        <p class="muted">فقط ایمیل‌های Gmail مجاز هستند. ابتدا ایمیل را تأیید کنید یا از Google استفاده کنید.</p>
         <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
           <button id="googleBtn" style="background:#fff; color:#444; border:1px solid #ddd; padding:8px 12px; display:flex; align-items:center; gap:6px">
             <span>ورود با Google</span>
           </button>
         </div>
-        <div class="muted" style="margin-top:8px">یا ایمیل Gmail خود را وارد کنید تا کد تأیید ارسال شود.</div>
+        <p class="muted" style="margin-top:8px">یا ایمیل Gmail خود را وارد کنید تا کد تأیید ارسال شود.</p>
         <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
           <input id="email" placeholder="you@gmail.com" style="min-width:260px">
           <button id="signupBtn">ارسال کد تأیید</button>
@@ -244,10 +244,12 @@ export function routeAuth(req: Request, url: URL, env?: any): Response | null {
         })();
       </script>
     ` : `
-      <h1>ثبت‌نام</h1>
-      <div class="card">ثبت‌نام عمومی غیرفعال است. لطفاً با مدیر تماس بگیرید.</div>
+      <div class="card">
+        <h2>ثبت‌نام</h2>
+        <p class="muted">ثبت‌نام عمومی غیرفعال است. لطفاً با مدیر تماس بگیرید.</p>
+      </div>
     `;
-    return html(body);
+    return html(page("ثبت‌نام", body));
   }
 
   // ---------- API: ثبت‌نام ----------
@@ -383,16 +385,16 @@ export function routeAuth(req: Request, url: URL, env?: any): Response | null {
   // ---------- صفحه مخفی مدیر/ادمین (/root) ----------
   if (p === "/root" && req.method === "GET") {
     const body = `
-      <h1>Secure Access</h1>
       <div class="card">
-        <div>ورود ویژهٔ مدیر/ادمین با <b>کد دسترسی</b> (Access Code)</div>
+        <h2>ورود ویژه</h2>
+        <p class="muted">ورود ویژهٔ مدیر/ادمین با <b>کد دسترسی</b> (Access Code)</p>
         <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
           <input id="email" placeholder="admin@gmail.com" style="min-width:260px">
           <input id="pass" type="password" placeholder="رمز عبور (اگر کاربر تازه است، همین ست می‌شود)">
           <input id="code" placeholder="Access Code">
           <button id="rootBtn">ورود ویژه</button>
         </div>
-        <div class="muted" style="margin-top:6px">اگر کاربری با این ایمیل موجود نباشد و کد درست باشد، ایجاد می‌شود.</div>
+        <p class="muted" style="margin-top:6px">اگر کاربری با این ایمیل موجود نباشد و کد درست باشد، ایجاد می‌شود.</p>
       </div>
       <script>
         document.getElementById('rootBtn').addEventListener('click', async ()=>{
@@ -406,7 +408,7 @@ export function routeAuth(req: Request, url: URL, env?: any): Response | null {
         });
       </script>
     `;
-    return html(body);
+    return html(page("ورود ویژه", body));
   }
 
   // ---------- API: ورود/ایجاد مدیر/ادمین با کُد ----------

@@ -3,7 +3,7 @@ import { routeAdmin } from "./routes/admin";
 import { routeAuth } from "./routes/auth";
 import { routeManagement } from "./routes/management";
 import { routeTaxonomy } from "./routes/taxonomy";
-import { html } from "./lib/http";
+import { html, page } from "./lib/http";
 import { getSessionUser, requireRole } from "./lib/auth";
 import { routeBilling } from "./routes/billing";
 
@@ -68,12 +68,12 @@ export default {
     // 9) صفحه خانه (لینک‌های مدیریتی فقط برای نقش مجاز)
     const me = await getSessionUser(req, env);
     const body = `
-      <h1>Psynex Exam</h1>
       <div class="card">
+        <h1>به Psynex Exam خوش آمدید</h1>
         ${me ? `
-          <div>ورود: <b>${me.email}</b> (${me.role}, ${me.planTier}) — <a href="/logout">خروج</a></div>
+          <p>ورود: <b>${me.email}</b> (${me.role}, ${me.planTier}) — <a href="/logout">خروج</a></p>
         ` : `
-          <div><a href="/login"><button>ورود</button></a></div>
+          <p><a href="/login"><button>ورود</button></a></p>
         `}
         <ul>
           <li><a href="/student">صفحه دانشجو</a> (نیاز به ورود)</li>
@@ -82,6 +82,6 @@ export default {
         </ul>
       </div>
     `;
-    return html(body);
+    return html(page("خانه", body));
   }
 }
