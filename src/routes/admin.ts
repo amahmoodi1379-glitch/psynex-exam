@@ -246,7 +246,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         async function fillSelect(id, url, valueKey = "id", labelKey = "name", selectedValue) {
           const el = document.getElementById(id);
           if (!(el instanceof HTMLSelectElement)) return;
-          const selectedKey = typeof selectedValue === "undefined" ? undefined : String(selectedValue || "");
+          const selectedKey = typeof selectedValue === "undefined" ? undefined : (selectedValue === null ? "" : String(selectedValue));
           el.innerHTML = "";
           if (!selectedKey) {
             appendPlaceholder(el);
