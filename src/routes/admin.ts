@@ -179,28 +179,28 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
                 <div>
                   <label>گزینه 1</label>
                   <div class="option-chooser">
-                    <label><input type="radio" id="edit-correct-1" name="correctLabel" value="1" required> صحیح</label>
+                    <label><input type="radio" id="edit-correct-1" name="correctLabel" value="1" required aria-label="انتخاب گزینه صحیح"></label>
                     <input id="edit-opt1" name="opt1" required style="width:100%">
                   </div>
                 </div>
                 <div>
                   <label>گزینه 2</label>
                   <div class="option-chooser">
-                    <label><input type="radio" id="edit-correct-2" name="correctLabel" value="2" required> صحیح</label>
+                    <label><input type="radio" id="edit-correct-2" name="correctLabel" value="2" required aria-label="انتخاب گزینه صحیح"></label>
                     <input id="edit-opt2" name="opt2" required style="width:100%">
                   </div>
                 </div>
                 <div>
                   <label>گزینه 3</label>
                   <div class="option-chooser">
-                    <label><input type="radio" id="edit-correct-3" name="correctLabel" value="3" required> صحیح</label>
+                    <label><input type="radio" id="edit-correct-3" name="correctLabel" value="3" required aria-label="انتخاب گزینه صحیح"></label>
                     <input id="edit-opt3" name="opt3" required style="width:100%">
                   </div>
                 </div>
                 <div>
                   <label>گزینه 4</label>
                   <div class="option-chooser">
-                    <label><input type="radio" id="edit-correct-4" name="correctLabel" value="4" required> صحیح</label>
+                    <label><input type="radio" id="edit-correct-4" name="correctLabel" value="4" required aria-label="انتخاب گزینه صحیح"></label>
                     <input id="edit-opt4" name="opt4" required style="width:100%">
                   </div>
                 </div>
@@ -594,28 +594,28 @@ function formHtml(action: string, withOptions: boolean, root: "k"|"t"|"q") {
       <div>
         <label>گزینه 1</label>
         <div class="option-chooser">
-          <label><input type="radio" name="correctLabel" value="1" required> صحیح</label>
+          <label><input type="radio" name="correctLabel" value="1" required aria-label="انتخاب گزینه صحیح"></label>
           <input name="opt1" required style="width:100%">
         </div>
       </div>
       <div>
         <label>گزینه 2</label>
         <div class="option-chooser">
-          <label><input type="radio" name="correctLabel" value="2" required> صحیح</label>
+          <label><input type="radio" name="correctLabel" value="2" required aria-label="انتخاب گزینه صحیح"></label>
           <input name="opt2" required style="width:100%">
         </div>
       </div>
       <div>
         <label>گزینه 3</label>
         <div class="option-chooser">
-          <label><input type="radio" name="correctLabel" value="3" required> صحیح</label>
+          <label><input type="radio" name="correctLabel" value="3" required aria-label="انتخاب گزینه صحیح"></label>
           <input name="opt3" required style="width:100%">
         </div>
       </div>
       <div>
         <label>گزینه 4</label>
         <div class="option-chooser">
-          <label><input type="radio" name="correctLabel" value="4" required> صحیح</label>
+          <label><input type="radio" name="correctLabel" value="4" required aria-label="انتخاب گزینه صحیح"></label>
           <input name="opt4" required style="width:100%">
         </div>
       </div>` : ``}
