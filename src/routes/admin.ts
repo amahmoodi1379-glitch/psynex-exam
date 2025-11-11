@@ -1,14 +1,14 @@
 import { html, json, page } from "../lib/http";
 import {
   createQuestion,
-  listQuestions,
   deleteQuestion,
   getQuestion,
   updateQuestion,
   findQuestionById,
-  searchQuestionsByStem,
+  listQuestionsManaged,
   type QuestionType,
   type Question,
+  type ManagedQuestionFilters,
 } from "../lib/dataStore";
 
 export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
@@ -71,16 +71,63 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
       const type = (url.searchParams.get("type") || "konkur") as "konkur"|"talifi"|"qa";
       const id = (url.searchParams.get("id") || "").trim();
       const query = (url.searchParams.get("query") || "").trim();
+      const pageRaw = Number(url.searchParams.get("page") || "1");
+      const pageSizeRaw = Number(url.searchParams.get("pageSize") || "20");
+      const sortParam = url.searchParams.get("sort") || "createdAt_desc";
+      const page = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.floor(pageRaw) : 1;
+      const pageSize = Math.min(100, Number.isFinite(pageSizeRaw) && pageSizeRaw > 0 ? Math.floor(pageSizeRaw) : 20);
+      const sort = sortParam === "createdAt_asc" ? "createdAt_asc" : "createdAt_desc";
+
       if (!env || !env.DATA) return json({ ok: false, error: "DATA binding missing" }, 500);
-      let list: Question[];
+
       if (id) {
-        list = await findQuestionById(env, type, id);
-      } else if (query) {
-        list = await searchQuestionsByStem(env, type, query, 200);
-      } else {
-        list = await listQuestions(env, type, 50);
+        const items = await findQuestionById(env, type, id);
+        return json({
+          ok: true,
+          data: items,
+          meta: {
+            total: items.length,
+            page: items.length ? 1 : Math.max(1, page),
+            pageSize: items.length || pageSize,
+            totalPages: 1,
+            hasMore: false,
+          },
+        });
       }
-      return json({ ok: true, data: list });
+
+      const filterKeys = [
+        "majorId",
+        "degreeId",
+        "ministryId",
+        "examYearId",
+        "courseId",
+        "sourceId",
+        "chapterId",
+      ] as const;
+      const filters: ManagedQuestionFilters = {};
+      for (const key of filterKeys) {
+        const value = (url.searchParams.get(key) || "").trim();
+        if (value) filters[key] = value;
+      }
+
+      const result = await listQuestionsManaged(env, type, {
+        filters,
+        query,
+        page,
+        pageSize,
+        sort,
+      });
+      return json({
+        ok: true,
+        data: result.items,
+        meta: {
+          total: result.total,
+          page: result.page,
+          pageSize: result.pageSize,
+          totalPages: result.totalPages,
+          hasMore: result.hasMore,
+        },
+      });
     })();
   }
 
@@ -159,6 +206,37 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
           <label>عبارت متن (اختیاری):<br>
             <input id="m-query" name="query" placeholder="بخشی از صورت سوال" style="min-width:220px">
           </label>
+          <label>رشته:<br>
+            <select id="m-major" name="majorId"></select>
+          </label>
+          <label>مقطع:<br>
+            <select id="m-degree" name="degreeId"></select>
+          </label>
+          <label>وزارتخانه:<br>
+            <select id="m-ministry" name="ministryId"></select>
+          </label>
+          <label>سال کنکور:<br>
+            <select id="m-examYear" name="examYearId"></select>
+          </label>
+          <label>درس:<br>
+            <select id="m-course" name="courseId"></select>
+          </label>
+          <label>منبع:<br>
+            <select id="m-source" name="sourceId"></select>
+          </label>
+          <label>فصل:<br>
+            <select id="m-chapter" name="chapterId"></select>
+          </label>
+          <label>مرتب‌سازی:<br>
+            <select id="m-sort" name="sort">
+              <option value="createdAt_desc">جدیدترین</option>
+              <option value="createdAt_asc">قدیمی‌ترین</option>
+            </select>
+          </label>
+          <label>تعداد در هر صفحه:<br>
+            <input type="number" id="m-pageSize" name="pageSize" value="20" min="1" max="100" style="width:80px">
+          </label>
+          <input type="hidden" id="m-page" name="page" value="1">
           <button type="submit" id="m-load">جست‌وجو</button>
         </form>
         <div id="m-status" class="muted" style="margin-top:6px"></div>
@@ -167,6 +245,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
             <thead><tr><th>شناسه</th><th>صورت سوال</th><th>نوع</th><th>عملیات</th></tr></thead>
             <tbody id="m-list"></tbody>
           </table>
+          <div id="m-pager" style="margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap"></div>
           <dialog id="edit-dialog">
             <form id="edit-form">
               <input type="hidden" name="id" id="edit-id">
@@ -378,6 +457,7 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         initCascades("k"); wireForm("form-k", "echo-konkur");
         initCascades("t"); wireForm("form-t", "echo-talifi");
         initCascades("q"); wireForm("form-q", "echo-qa");
+        initCascades("m");
         initCascades("edit");
 
         const editDialog = document.getElementById("edit-dialog");
@@ -481,14 +561,128 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         // مدیریت
         const manageForm = document.getElementById("m-form");
         const manageStatus = document.getElementById("m-status");
-        async function loadManageList() {
-          const type = document.getElementById("m-type").value;
-          const id = document.getElementById("m-id").value.trim();
-          const query = document.getElementById("m-query").value.trim();
-          const params = new URLSearchParams({ type });
-          if (id) params.set("id", id);
-          if (query) params.set("query", query);
+        const managePager = document.getElementById("m-pager");
+        let managePage = 1;
+
+        function readFieldValue(id) {
+          const el = document.getElementById(id);
+          if (el instanceof HTMLSelectElement || el instanceof HTMLInputElement) {
+            return el.value.trim();
+          }
+          return "";
+        }
+
+        function renderManagePagination(meta) {
+          if (!(managePager instanceof HTMLElement)) return;
+          managePager.innerHTML = "";
+          if (!meta) return;
+
+          const page = Number(meta.page) || managePage;
+          const pageSize = Number(meta.pageSize) || Number(readFieldValue("m-pageSize") || 20);
+          const total = typeof meta.total === "number" ? meta.total : null;
+          const computedTotalPages = typeof meta.totalPages === "number"
+            ? meta.totalPages
+            : (total !== null ? Math.max(1, Math.ceil(total / Math.max(1, pageSize))) : null);
+          const totalPages = (typeof computedTotalPages === "number" && Number.isFinite(computedTotalPages))
+            ? computedTotalPages
+            : null;
+          const hasMore = Boolean(meta.hasMore);
+
+          const info = document.createElement("span");
+          if (total !== null && totalPages !== null && totalPages > 0) {
+            info.textContent = "صفحه " + page + " از " + totalPages + " (کل " + total + ")";
+          } else if (total !== null) {
+            info.textContent = "صفحه " + page + " (کل " + total + ")";
+          } else {
+            info.textContent = "صفحه " + page;
+          }
+          managePager.appendChild(info);
+
+          const prevBtn = document.createElement("button");
+          prevBtn.type = "button";
+          prevBtn.textContent = "صفحه قبل";
+          prevBtn.disabled = page <= 1;
+          prevBtn.addEventListener("click", () => {
+            if (page > 1) loadManageList({ page: page - 1 });
+          });
+          managePager.appendChild(prevBtn);
+
+          const nextBtn = document.createElement("button");
+          nextBtn.type = "button";
+          nextBtn.textContent = "صفحه بعد";
+          const canGoNext = totalPages !== null ? page < totalPages : hasMore;
+          nextBtn.disabled = !canGoNext;
+          nextBtn.addEventListener("click", () => {
+            if (canGoNext) loadManageList({ page: page + 1 });
+          });
+          managePager.appendChild(nextBtn);
+        }
+
+        async function loadManageList(opts = {}) {
+          if (!(manageForm instanceof HTMLFormElement)) return;
+          const typeEl = document.getElementById("m-type");
+          const idEl = document.getElementById("m-id");
+          const queryEl = document.getElementById("m-query");
+          const sortEl = document.getElementById("m-sort");
+          const pageEl = document.getElementById("m-page");
+          const pageSizeEl = document.getElementById("m-pageSize");
+
+          if (opts && typeof opts.page === "number" && opts.page > 0) {
+            managePage = Math.floor(opts.page);
+          } else if (opts && opts.resetPage) {
+            managePage = 1;
+          } else if (pageEl instanceof HTMLInputElement) {
+            const parsed = Number(pageEl.value);
+            if (Number.isFinite(parsed) && parsed > 0) {
+              managePage = Math.floor(parsed);
+            }
+          }
+          if (managePage < 1) managePage = 1;
+          if (pageEl instanceof HTMLInputElement) {
+            pageEl.value = String(managePage);
+          }
+
+          let pageSize = 20;
+          if (pageSizeEl instanceof HTMLInputElement) {
+            const parsedSize = Number(pageSizeEl.value);
+            if (Number.isFinite(parsedSize) && parsedSize > 0) {
+              pageSize = Math.min(100, Math.max(1, Math.floor(parsedSize)));
+            }
+            pageSizeEl.value = String(pageSize);
+          }
+
+          const params = new URLSearchParams();
+          const typeVal = typeEl instanceof HTMLSelectElement ? (typeEl.value || "konkur") : "konkur";
+          params.set("type", typeVal);
+
+          const idVal = idEl instanceof HTMLInputElement ? idEl.value.trim() : "";
+          const queryVal = queryEl instanceof HTMLInputElement ? queryEl.value.trim() : "";
+          if (idVal) params.set("id", idVal);
+          if (queryVal) params.set("query", queryVal);
+          params.set("page", String(managePage));
+          params.set("pageSize", String(pageSize));
+          const sortVal = sortEl instanceof HTMLSelectElement ? sortEl.value : "";
+          if (sortVal) params.set("sort", sortVal);
+
+          const filterFields = [
+            ["majorId", "m-major"],
+            ["degreeId", "m-degree"],
+            ["ministryId", "m-ministry"],
+            ["examYearId", "m-examYear"],
+            ["courseId", "m-course"],
+            ["sourceId", "m-source"],
+            ["chapterId", "m-chapter"],
+          ];
+          for (const [param, elementId] of filterFields) {
+            const value = readFieldValue(elementId);
+            if (value) params.set(param, value);
+          }
+
           manageStatus.textContent = "در حال جست‌وجو...";
+          if (managePager instanceof HTMLElement) {
+            managePager.innerHTML = "";
+          }
+
           let data;
           try {
             const res = await fetch("/api/admin/questions?" + params.toString());
@@ -497,18 +691,34 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
             manageStatus.textContent = "خطا در برقراری ارتباط";
             return;
           }
+
           const tb = document.getElementById("m-list");
-          tb.innerHTML = "";
-          if (!data.ok) {
-            manageStatus.textContent = "خطا: " + (data.error || "نامشخص");
+          if (tb) tb.innerHTML = "";
+          if (!data || !data.ok) {
+            manageStatus.textContent = "خطا: " + (data?.error || "نامشخص");
             return;
           }
-          manageStatus.textContent = "";
-          if (!Array.isArray(data.data) || data.data.length === 0) {
+
+          const meta = data.meta || {};
+          if (typeof meta.page === "number") {
+            managePage = meta.page;
+          }
+          if (pageEl instanceof HTMLInputElement) {
+            pageEl.value = String(managePage);
+          }
+          if (pageSizeEl instanceof HTMLInputElement && typeof meta.pageSize === "number") {
+            pageSizeEl.value = String(meta.pageSize);
+          }
+
+          const items = Array.isArray(data.data) ? data.data : [];
+          if (!items.length) {
             manageStatus.textContent = "موردی یافت نشد";
+            renderManagePagination(meta);
             return;
           }
-          for (const it of data.data) {
+
+          manageStatus.textContent = "";
+          for (const it of items) {
             const tr = document.createElement("tr");
             tr.innerHTML = "<td>"+it.id+"</td><td>"+(it.stem?.slice(0,120) || "")+"</td><td>"+it.type+"</td><td></td>";
             const actions = tr.lastChild;
@@ -525,15 +735,20 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
             delBtn.textContent = "حذف";
             delBtn.onclick = async () => {
               if (!confirm("حذف این آیتم؟")) return;
-              await fetch("/api/admin/question/delete?type="+type+"&id="+encodeURIComponent(it.id), { method: "DELETE" });
+              await fetch("/api/admin/question/delete?type="+encodeURIComponent(it.type)+"&id="+encodeURIComponent(it.id), { method: "DELETE" });
               loadManageList();
             };
             actions.appendChild(delBtn);
-            tb.appendChild(tr);
+            tb?.appendChild(tr);
           }
+          renderManagePagination(meta);
         }
-        manageForm.addEventListener("submit", (ev) => {
+        manageForm?.addEventListener("submit", (ev) => {
           ev.preventDefault();
+          if (document.getElementById("m-page") instanceof HTMLInputElement) {
+            document.getElementById("m-page").value = "1";
+            managePage = 1;
+          }
           loadManageList();
         });
       </script>
