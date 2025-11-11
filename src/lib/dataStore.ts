@@ -119,6 +119,149 @@ export async function listQuestions(env: any, type: QuestionType, limit = 50): P
   return out;
 }
 
+export type ManagedQuestionFilters = Partial<Pick<Question,
+  | "majorId"
+  | "degreeId"
+  | "ministryId"
+  | "examYearId"
+  | "courseId"
+  | "sourceId"
+  | "chapterId"
+>>;
+
+export type ManagedQuestionSort = "createdAt_desc" | "createdAt_asc";
+
+export type ManagedQuestionListOptions = {
+  filters?: ManagedQuestionFilters;
+  query?: string;
+  page?: number;
+  pageSize?: number;
+  sort?: ManagedQuestionSort;
+  scanLimit?: number;
+};
+
+export const MANAGED_FILTER_KEYS = [
+  "majorId",
+  "degreeId",
+  "ministryId",
+  "examYearId",
+  "courseId",
+  "sourceId",
+  "chapterId",
+] as const satisfies ReadonlyArray<keyof ManagedQuestionFilters & keyof Question>;
+
+export type ManagedQuestionListResult = {
+  items: Question[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  hasMore: boolean;
+};
+
+const DEFAULT_SCAN_BUFFER_MULTIPLIER = 3;
+const DEFAULT_MIN_SCAN_SIZE = 400;
+const MAX_KV_BATCH_SIZE = 1000;
+
+export async function listQuestionsManaged(
+  env: any,
+  type: QuestionType,
+  options: ManagedQuestionListOptions = {}
+): Promise<ManagedQuestionListResult> {
+  const filters = options.filters || {};
+  const rawQuery = (options.query || "").trim().toLowerCase();
+  const pageSize = Math.min(100, Math.max(1, Math.floor(options.pageSize ?? 20)));
+  const requestedPage = Math.max(1, Math.floor(options.page ?? 1));
+  const sort: ManagedQuestionSort = options.sort && options.sort.startsWith("createdAt_")
+    ? options.sort as ManagedQuestionSort
+    : "createdAt_desc";
+  const sortAscending = sort.endsWith("_asc");
+
+  const targetCount = requestedPage * pageSize;
+  const desiredScan = Math.max(
+    targetCount + pageSize * DEFAULT_SCAN_BUFFER_MULTIPLIER,
+    options.scanLimit ? Math.floor(options.scanLimit) : 0,
+    DEFAULT_MIN_SCAN_SIZE
+  );
+
+  const keys: string[] = [];
+  let cursor: string | undefined = undefined;
+  let hasMoreInKV = false;
+  while (keys.length < desiredScan) {
+    const batchLimit = Math.min(MAX_KV_BATCH_SIZE, Math.max(1, desiredScan - keys.length));
+    const res = await env.DATA.list({ prefix: prefix(type), limit: batchLimit, cursor });
+    for (const k of res.keys) {
+      keys.push(k.name);
+    }
+    if (res.list_complete) {
+      cursor = undefined;
+      break;
+    }
+    if (!res.cursor) {
+      break;
+    }
+    cursor = res.cursor;
+    if (keys.length >= desiredScan) {
+      hasMoreInKV = true;
+      break;
+    }
+  }
+  hasMoreInKV = hasMoreInKV || Boolean(cursor);
+
+  const rawValues = await Promise.all(keys.map((name) => env.DATA.get(name)));
+  const allQuestions: Question[] = [];
+  for (const raw of rawValues) {
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw) as Question;
+      if (parsed && parsed.type === type) {
+        allQuestions.push(parsed);
+      }
+    } catch (err) {
+      console.warn("listQuestionsManaged: failed to parse question", err);
+    }
+  }
+
+  const filtered = allQuestions.filter((q) => {
+    for (const key of MANAGED_FILTER_KEYS) {
+      const expected = filters[key];
+      if (typeof expected === "undefined" || expected === null || expected === "") continue;
+      const actual = q[key];
+      if (String(actual ?? "") !== String(expected)) {
+        return false;
+      }
+    }
+    if (rawQuery) {
+      const hay = ((q.stem || "") + " " + (q.expl || "")).toLowerCase();
+      if (!hay.includes(rawQuery)) return false;
+    }
+    return true;
+  });
+
+  filtered.sort((a, b) => {
+    const av = typeof a.createdAt === "number" ? a.createdAt : 0;
+    const bv = typeof b.createdAt === "number" ? b.createdAt : 0;
+    if (av === bv) return 0;
+    return sortAscending ? av - bv : bv - av;
+  });
+
+  const total = filtered.length;
+  const totalPages = total === 0 ? 1 : Math.ceil(total / pageSize);
+  const safePage = Math.min(requestedPage, totalPages);
+  const start = (safePage - 1) * pageSize;
+  const items = filtered.slice(start, start + pageSize);
+  const hasMore = safePage < totalPages || hasMoreInKV;
+
+  return {
+    items,
+    total,
+    page: safePage,
+    pageSize,
+    totalPages,
+    hasMore,
+  };
+}
+
 // حذف
 export async function deleteQuestion(env: any, type: QuestionType, id: string): Promise<boolean> {
   await env.DATA.delete(prefix(type) + id);
