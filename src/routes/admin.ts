@@ -766,11 +766,9 @@ function formToQuestionPayload(fd: FormData, type: QuestionType): Omit<Question,
     stem: String(fd.get("stem") || ""),
   };
 
-  if (type === "konkur") {
-    payload.degreeId = optionalField(fd, "degreeId");
-    payload.ministryId = optionalField(fd, "ministryId");
-    payload.examYearId = optionalField(fd, "examYearId");
-  }
+  payload.degreeId = optionalField(fd, "degreeId");
+  payload.ministryId = optionalField(fd, "ministryId");
+  payload.examYearId = optionalField(fd, "examYearId");
   payload.sourceId = optionalField(fd, "sourceId");
   payload.chapterId = optionalField(fd, "chapterId");
   payload.expl = optionalField(fd, "expl");
@@ -794,11 +792,11 @@ function formToQuestionPayload(fd: FormData, type: QuestionType): Omit<Question,
 
 // فرم‌ساز
 function formHtml(action: string, withOptions: boolean, root: "k"|"t"|"q") {
-  const konkurMeta = root === "k" ? `
+  const metadataSelects = root === "q" ? "" : `
     <div><label>مقطع</label> <select id="${root}-degree" name="degreeId"></select></div>
     <div><label>وزارتخانه</label> <select id="${root}-ministry" name="ministryId"></select></div>
     <div><label>سال کنکور</label> <select id="${root}-examYear" name="examYearId"></select></div>
-  ` : "";
+  `;
   const optionalSourceChapter = root === "k" ? "" : `
     <div><label>منبع</label> <select id="${root}-source" name="sourceId"></select></div>
     <div><label>فصل</label> <select id="${root}-chapter" name="chapterId"></select></div>
@@ -806,7 +804,7 @@ function formHtml(action: string, withOptions: boolean, root: "k"|"t"|"q") {
   return `
   <form id="form-${root}" method="post" action="${action}">
     <div><label>رشته</label> <select id="${root}-major" name="majorId" required></select></div>
-    ${konkurMeta}
+    ${metadataSelects}
     <div><label>درس</label> <select id="${root}-course" name="courseId" required></select></div>
     ${optionalSourceChapter}
 

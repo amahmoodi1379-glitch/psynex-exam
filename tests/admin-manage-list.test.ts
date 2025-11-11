@@ -200,6 +200,30 @@ async function run() {
     assert.equal(deepFiltered.meta?.total, 1);
     assert.equal(deepFiltered.meta?.hasMore, false);
 
+    const talifiUrl = new URL("https://example.com/api/admin/create?type=talifi");
+    const talifiForm = new URLSearchParams();
+    talifiForm.set("majorId", "talifi-major");
+    talifiForm.set("courseId", "talifi-course");
+    talifiForm.set("stem", "talifi question with metadata");
+    talifiForm.set("opt1", "option a");
+    talifiForm.set("opt2", "option b");
+    talifiForm.set("opt3", "option c");
+    talifiForm.set("opt4", "option d");
+    talifiForm.set("correctLabel", "3");
+    talifiForm.set("degreeId", "talifi-degree");
+    const talifiReq = new Request(talifiUrl, { method: "POST", body: talifiForm });
+    const talifiRes = await routeAdmin(talifiReq, talifiUrl, env);
+    assert.ok(talifiRes instanceof Response);
+    assert.equal(talifiRes.status, 200);
+    const talifiBody: any = await talifiRes.json();
+    assert.equal(talifiBody?.ok, true);
+    const talifiId = talifiBody?.id;
+    assert.ok(talifiId);
+
+    const talifiFiltered = await call({ type: "talifi", degreeId: "talifi-degree" });
+    assert.equal(talifiFiltered.data.length, 1);
+    assert.equal(talifiFiltered.data[0]?.id, talifiId);
+
     console.log("admin manage list supports filters and pagination");
   } finally {
     Date.now = restoreNow;
