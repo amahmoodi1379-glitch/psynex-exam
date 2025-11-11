@@ -150,6 +150,23 @@ export const MANAGED_FILTER_KEYS = [
   "chapterId",
 ] as const satisfies ReadonlyArray<keyof ManagedQuestionFilters & keyof Question>;
 
+type ManagedFilterKey = (typeof MANAGED_FILTER_KEYS)[number];
+
+function questionMatchesFilters(
+  question: Question,
+  filters: Partial<Record<ManagedFilterKey, unknown>>,
+): boolean {
+  for (const key of MANAGED_FILTER_KEYS) {
+    const expected = filters[key];
+    if (expected === undefined || expected === null || expected === "") continue;
+    const actual = question[key];
+    if (String(actual ?? "") !== String(expected)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export type ManagedQuestionListResult = {
   items: Question[];
   total: number;
@@ -199,14 +216,8 @@ export async function listQuestionsManaged(
           const parsed = JSON.parse(raw) as Question;
           if (!parsed || parsed.type !== type) continue;
           let passes = true;
-          for (const key of MANAGED_FILTER_KEYS) {
-            const expected = filters[key];
-            if (typeof expected === "undefined" || expected === null || expected === "") continue;
-            const actual = parsed[key];
-            if (String(actual ?? "") !== String(expected)) {
-              passes = false;
-              break;
-            }
+          if (!questionMatchesFilters(parsed, filters)) {
+            passes = false;
           }
           if (passes && rawQuery) {
             const hay = ((parsed.stem || "") + " " + (parsed.expl || "")).toLowerCase();
@@ -296,13 +307,7 @@ export async function queryRandomQuestion(
     const raw = await env.DATA.get(k.name);
     if (!raw) continue;
     const q: Question = JSON.parse(raw);
-    if (filters.majorId && String(q.majorId) !== String(filters.majorId)) continue;
-    if (filters.degreeId && String(q.degreeId || "") !== String(filters.degreeId)) continue;
-    if (filters.ministryId && String(q.ministryId || "") !== String(filters.ministryId)) continue;
-    if (filters.examYearId && String(q.examYearId || "") !== String(filters.examYearId)) continue;
-    if (filters.courseId && String(q.courseId) !== String(filters.courseId)) continue;
-    if (filters.sourceId && String(q.sourceId || "") !== String(filters.sourceId)) continue;
-    if (filters.chapterId && String(q.chapterId || "") !== String(filters.chapterId)) continue;
+    if (!questionMatchesFilters(q, filters)) continue;
     picks.push(q);
   }
   if (!picks.length) return null;
@@ -440,14 +445,7 @@ export async function chooseChallengeQuestion(
     if (!q) continue;
 
     // فیلترها (رشته اجباری در UI خواهد بود، بقیه اختیاری)
-    const eq = (a?: string|number, b?: string|number) => (b == null || b === "" ? true : String(a||"") === String(b));
-    if (!eq(q.majorId,     filters.majorId)) continue;
-    if (!eq(q.courseId,    filters.courseId)) continue;
-    if (!eq(q.degreeId,    filters.degreeId)) continue;
-    if (!eq(q.ministryId,  filters.ministryId)) continue;
-    if (!eq(q.examYearId,  filters.examYearId)) continue;
-    if (!eq(q.sourceId,    filters.sourceId)) continue;
-    if (!eq(q.chapterId,   filters.chapterId)) continue;
+    if (!questionMatchesFilters(q, filters)) continue;
 
     candidates.push({ q, st, served });
   }
@@ -617,10 +615,7 @@ export async function sampleQuestions(
       const raw = await env.DATA.get(k.name);
       if (!raw) continue;
       const q: Question = JSON.parse(raw);
-      if (filters.majorId   && String(q.majorId)   !== String(filters.majorId)) continue;
-      if (filters.courseId  && String(q.courseId)  !== String(filters.courseId)) continue;
-      if (filters.sourceId  && String(q.sourceId||"")  !== String(filters.sourceId)) continue;
-      if (filters.chapterId && String(q.chapterId||"") !== String(filters.chapterId)) continue;
+      if (!questionMatchesFilters(q, filters)) continue;
       candidates.push(q);
     }
     if (res.list_complete) break;
