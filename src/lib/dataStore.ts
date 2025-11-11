@@ -150,6 +150,23 @@ export const MANAGED_FILTER_KEYS = [
   "chapterId",
 ] as const satisfies ReadonlyArray<keyof ManagedQuestionFilters & keyof Question>;
 
+type ManagedFilterKey = (typeof MANAGED_FILTER_KEYS)[number];
+
+function questionMatchesFilters(
+  question: Question,
+  filters: Partial<Record<ManagedFilterKey, unknown>>,
+): boolean {
+  for (const key of MANAGED_FILTER_KEYS) {
+    const expected = filters[key];
+    if (expected === undefined || expected === null || expected === "") continue;
+    const actual = question[key];
+    if (String(actual ?? "") !== String(expected)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export type ManagedQuestionListResult = {
   items: Question[];
   total: number;
@@ -160,7 +177,7 @@ export type ManagedQuestionListResult = {
 };
 
 const DEFAULT_SCAN_BUFFER_MULTIPLIER = 3;
-const DEFAULT_MIN_SCAN_SIZE = 400;
+export const DEFAULT_MIN_SCAN_SIZE = 400;
 const MAX_KV_BATCH_SIZE = 1000;
 
 export async function listQuestionsManaged(
@@ -184,72 +201,82 @@ export async function listQuestionsManaged(
     DEFAULT_MIN_SCAN_SIZE
   );
 
-  const keys: string[] = [];
+  const filtered: Question[] = [];
   let cursor: string | undefined = undefined;
   let hasMoreInKV = false;
-  while (keys.length < desiredScan) {
-    const batchLimit = Math.min(MAX_KV_BATCH_SIZE, Math.max(1, desiredScan - keys.length));
+  const batchLimit = Math.min(MAX_KV_BATCH_SIZE, Math.max(pageSize, desiredScan));
+  while (true) {
     const res = await env.DATA.list({ prefix: prefix(type), limit: batchLimit, cursor });
-    for (const k of res.keys) {
-      keys.push(k.name);
+    const names = res.keys.map((k: { name: string }) => k.name);
+    if (names.length) {
+      const rawValues = await Promise.all(names.map((name) => env.DATA.get(name)));
+      for (const raw of rawValues) {
+        if (!raw) continue;
+        try {
+          const parsed = JSON.parse(raw) as Question;
+          if (!parsed || parsed.type !== type) continue;
+          let passes = true;
+          if (!questionMatchesFilters(parsed, filters)) {
+            passes = false;
+          }
+          if (passes && rawQuery) {
+            const hay = ((parsed.stem || "") + " " + (parsed.expl || "")).toLowerCase();
+            if (!hay.includes(rawQuery)) {
+              passes = false;
+            }
+          }
+          if (passes) {
+            filtered.push(parsed);
+          }
+        } catch (err) {
+          console.warn("listQuestionsManaged: failed to parse question", err);
+        }
+      }
     }
-    if (res.list_complete) {
+
+    const batchComplete = Boolean(res.list_complete) || !res.cursor;
+
+    if (filtered.length >= targetCount) {
+      if (!batchComplete) {
+        cursor = res.cursor;
+        hasMoreInKV = true;
+      } else {
+        cursor = undefined;
+        hasMoreInKV = false;
+      }
+      break;
+    }
+
+    if (batchComplete) {
       cursor = undefined;
+      hasMoreInKV = false;
       break;
     }
-    if (!res.cursor) {
+
+    if (!names.length) {
+      cursor = res.cursor;
+      hasMoreInKV = Boolean(cursor);
       break;
     }
+
     cursor = res.cursor;
-    if (keys.length >= desiredScan) {
-      hasMoreInKV = true;
-      break;
-    }
+    hasMoreInKV = true;
   }
   hasMoreInKV = hasMoreInKV || Boolean(cursor);
 
-  const rawValues = await Promise.all(keys.map((name) => env.DATA.get(name)));
-  const allQuestions: Question[] = [];
-  for (const raw of rawValues) {
-    if (!raw) continue;
-    try {
-      const parsed = JSON.parse(raw) as Question;
-      if (parsed && parsed.type === type) {
-        allQuestions.push(parsed);
-      }
-    } catch (err) {
-      console.warn("listQuestionsManaged: failed to parse question", err);
-    }
-  }
-
-  const filtered = allQuestions.filter((q) => {
-    for (const key of MANAGED_FILTER_KEYS) {
-      const expected = filters[key];
-      if (typeof expected === "undefined" || expected === null || expected === "") continue;
-      const actual = q[key];
-      if (String(actual ?? "") !== String(expected)) {
-        return false;
-      }
-    }
-    if (rawQuery) {
-      const hay = ((q.stem || "") + " " + (q.expl || "")).toLowerCase();
-      if (!hay.includes(rawQuery)) return false;
-    }
-    return true;
-  });
-
-  filtered.sort((a, b) => {
+  const filteredSorted = filtered.slice();
+  filteredSorted.sort((a, b) => {
     const av = typeof a.createdAt === "number" ? a.createdAt : 0;
     const bv = typeof b.createdAt === "number" ? b.createdAt : 0;
     if (av === bv) return 0;
     return sortAscending ? av - bv : bv - av;
   });
 
-  const total = filtered.length;
+  const total = filteredSorted.length;
   const totalPages = total === 0 ? 1 : Math.ceil(total / pageSize);
   const safePage = Math.min(requestedPage, totalPages);
   const start = (safePage - 1) * pageSize;
-  const items = filtered.slice(start, start + pageSize);
+  const items = filteredSorted.slice(start, start + pageSize);
   const hasMore = safePage < totalPages || hasMoreInKV;
 
   return {
@@ -280,13 +307,7 @@ export async function queryRandomQuestion(
     const raw = await env.DATA.get(k.name);
     if (!raw) continue;
     const q: Question = JSON.parse(raw);
-    if (filters.majorId && String(q.majorId) !== String(filters.majorId)) continue;
-    if (filters.degreeId && String(q.degreeId || "") !== String(filters.degreeId)) continue;
-    if (filters.ministryId && String(q.ministryId || "") !== String(filters.ministryId)) continue;
-    if (filters.examYearId && String(q.examYearId || "") !== String(filters.examYearId)) continue;
-    if (filters.courseId && String(q.courseId) !== String(filters.courseId)) continue;
-    if (filters.sourceId && String(q.sourceId || "") !== String(filters.sourceId)) continue;
-    if (filters.chapterId && String(q.chapterId || "") !== String(filters.chapterId)) continue;
+    if (!questionMatchesFilters(q, filters)) continue;
     picks.push(q);
   }
   if (!picks.length) return null;
@@ -424,14 +445,7 @@ export async function chooseChallengeQuestion(
     if (!q) continue;
 
     // فیلترها (رشته اجباری در UI خواهد بود، بقیه اختیاری)
-    const eq = (a?: string|number, b?: string|number) => (b == null || b === "" ? true : String(a||"") === String(b));
-    if (!eq(q.majorId,     filters.majorId)) continue;
-    if (!eq(q.courseId,    filters.courseId)) continue;
-    if (!eq(q.degreeId,    filters.degreeId)) continue;
-    if (!eq(q.ministryId,  filters.ministryId)) continue;
-    if (!eq(q.examYearId,  filters.examYearId)) continue;
-    if (!eq(q.sourceId,    filters.sourceId)) continue;
-    if (!eq(q.chapterId,   filters.chapterId)) continue;
+    if (!questionMatchesFilters(q, filters)) continue;
 
     candidates.push({ q, st, served });
   }
@@ -601,10 +615,7 @@ export async function sampleQuestions(
       const raw = await env.DATA.get(k.name);
       if (!raw) continue;
       const q: Question = JSON.parse(raw);
-      if (filters.majorId   && String(q.majorId)   !== String(filters.majorId)) continue;
-      if (filters.courseId  && String(q.courseId)  !== String(filters.courseId)) continue;
-      if (filters.sourceId  && String(q.sourceId||"")  !== String(filters.sourceId)) continue;
-      if (filters.chapterId && String(q.chapterId||"") !== String(filters.chapterId)) continue;
+      if (!questionMatchesFilters(q, filters)) continue;
       candidates.push(q);
     }
     if (res.list_complete) break;

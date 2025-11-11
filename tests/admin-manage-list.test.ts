@@ -36,14 +36,19 @@ function createMemoryKV() {
       const filtered = Array.from(store.keys())
         .filter(key => key.startsWith(prefix))
         .sort();
-      const keys = (limit ? filtered.slice(0, limit) : filtered).map(name => ({ name }));
-      return { keys, list_complete: true, cursor: undefined };
+      const startIndex = opts?.cursor ? Number(opts.cursor) : 0;
+      const nextKeys = limit ? filtered.slice(startIndex, startIndex + limit) : filtered.slice(startIndex);
+      const nextIndex = startIndex + nextKeys.length;
+      const list_complete = !limit || nextIndex >= filtered.length;
+      const cursor = list_complete ? undefined : String(nextIndex);
+      const keys = nextKeys.map(name => ({ name }));
+      return { keys, list_complete, cursor };
     },
   };
 }
 
 async function run() {
-  const { createQuestion } = await import("../src/lib/dataStore.ts");
+  const { createQuestion, DEFAULT_MIN_SCAN_SIZE } = await import("../src/lib/dataStore.ts");
   const { routeAdmin } = await import("../src/routes/admin.ts");
 
   const env: any = { DATA: createMemoryKV() };
@@ -152,6 +157,48 @@ async function run() {
     assert.equal(missingId.data.length, 0);
     assert.equal(missingId.meta?.total, 0);
     assert.equal(missingId.meta?.pageSize, 5);
+
+    const fillerMajor = "maj-scan";
+    const fillerCount = DEFAULT_MIN_SCAN_SIZE + 5;
+    for (let i = 0; i < fillerCount; i++) {
+      const id = `filler-${String(i).padStart(4, "0")}`;
+      const createdAt = Date.now();
+      await env.DATA.put(`q:konkur:${id}`, JSON.stringify({
+        ...shared,
+        id,
+        type: "konkur",
+        majorId: fillerMajor,
+        courseId: "course-fill",
+        sourceId: "source-fill",
+        chapterId: "chapter-fill",
+        stem: `filler question ${i}`,
+        createdAt,
+      }));
+    }
+    const targetId = `target-${String(fillerCount).padStart(4, "0")}`;
+    const targetCreatedAt = Date.now();
+    await env.DATA.put(`q:konkur:${targetId}`, JSON.stringify({
+      ...shared,
+      id: targetId,
+      type: "konkur",
+      majorId: "maj-scan-target",
+      courseId: "course-target",
+      sourceId: "source-target",
+      chapterId: "chapter-target",
+      stem: "needle question stem",
+      createdAt: targetCreatedAt,
+    }));
+
+    const deepFiltered = await call({
+      ...baseParams,
+      page: "1",
+      pageSize: "1",
+      majorId: "maj-scan-target",
+    });
+    assert.equal(deepFiltered.data.length, 1);
+    assert.equal(deepFiltered.data[0]?.id, targetId);
+    assert.equal(deepFiltered.meta?.total, 1);
+    assert.equal(deepFiltered.meta?.hasMore, false);
 
     console.log("admin manage list supports filters and pagination");
   } finally {
