@@ -140,6 +140,16 @@ export type ManagedQuestionListOptions = {
   scanLimit?: number;
 };
 
+export const MANAGED_FILTER_KEYS = [
+  "majorId",
+  "degreeId",
+  "ministryId",
+  "examYearId",
+  "courseId",
+  "sourceId",
+  "chapterId",
+] as const satisfies ReadonlyArray<keyof ManagedQuestionFilters & keyof Question>;
+
 export type ManagedQuestionListResult = {
   items: Question[];
   total: number;
@@ -148,6 +158,10 @@ export type ManagedQuestionListResult = {
   totalPages: number;
   hasMore: boolean;
 };
+
+const DEFAULT_SCAN_BUFFER_MULTIPLIER = 3;
+const DEFAULT_MIN_SCAN_SIZE = 400;
+const MAX_KV_BATCH_SIZE = 1000;
 
 export async function listQuestionsManaged(
   env: any,
@@ -165,34 +179,34 @@ export async function listQuestionsManaged(
 
   const targetCount = requestedPage * pageSize;
   const desiredScan = Math.max(
-    targetCount + pageSize * 3,
+    targetCount + pageSize * DEFAULT_SCAN_BUFFER_MULTIPLIER,
     options.scanLimit ? Math.floor(options.scanLimit) : 0,
-    400
+    DEFAULT_MIN_SCAN_SIZE
   );
 
   const keys: string[] = [];
   let cursor: string | undefined = undefined;
   let hasMoreInKV = false;
   while (keys.length < desiredScan) {
-    const batchLimit = Math.min(1000, Math.max(1, desiredScan - keys.length));
+    const batchLimit = Math.min(MAX_KV_BATCH_SIZE, Math.max(1, desiredScan - keys.length));
     const res = await env.DATA.list({ prefix: prefix(type), limit: batchLimit, cursor });
     for (const k of res.keys) {
       keys.push(k.name);
     }
-    if (!res.list_complete && res.cursor) {
-      hasMoreInKV = true;
-      cursor = res.cursor;
-    } else {
+    if (res.list_complete) {
       cursor = undefined;
-      if (!res.list_complete && !res.cursor && keys.length >= desiredScan) {
-        hasMoreInKV = true;
-      }
+      break;
+    }
+    if (!res.cursor) {
+      break;
+    }
+    cursor = res.cursor;
+    if (keys.length >= desiredScan) {
+      hasMoreInKV = true;
       break;
     }
   }
-  if (cursor) {
-    hasMoreInKV = true;
-  }
+  hasMoreInKV = hasMoreInKV || Boolean(cursor);
 
   const rawValues = await Promise.all(keys.map((name) => env.DATA.get(name)));
   const allQuestions: Question[] = [];
@@ -203,26 +217,16 @@ export async function listQuestionsManaged(
       if (parsed && parsed.type === type) {
         allQuestions.push(parsed);
       }
-    } catch {
-      // ignore malformed entries
+    } catch (err) {
+      console.warn("listQuestionsManaged: failed to parse question", err);
     }
   }
 
-  const taxonomyKeys: Array<keyof ManagedQuestionFilters> = [
-    "majorId",
-    "degreeId",
-    "ministryId",
-    "examYearId",
-    "courseId",
-    "sourceId",
-    "chapterId",
-  ];
-
   const filtered = allQuestions.filter((q) => {
-    for (const key of taxonomyKeys) {
+    for (const key of MANAGED_FILTER_KEYS) {
       const expected = filters[key];
       if (typeof expected === "undefined" || expected === null || expected === "") continue;
-      const actual = (q as any)[key];
+      const actual = q[key];
       if (String(actual ?? "") !== String(expected)) {
         return false;
       }

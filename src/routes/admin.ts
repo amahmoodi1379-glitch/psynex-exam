@@ -6,6 +6,7 @@ import {
   updateQuestion,
   findQuestionById,
   listQuestionsManaged,
+  MANAGED_FILTER_KEYS,
   type QuestionType,
   type Question,
   type ManagedQuestionFilters,
@@ -95,17 +96,8 @@ export function routeAdmin(req: Request, url: URL, env?: any): Response | null {
         });
       }
 
-      const filterKeys = [
-        "majorId",
-        "degreeId",
-        "ministryId",
-        "examYearId",
-        "courseId",
-        "sourceId",
-        "chapterId",
-      ] as const;
       const filters: ManagedQuestionFilters = {};
-      for (const key of filterKeys) {
+      for (const key of MANAGED_FILTER_KEYS) {
         const value = (url.searchParams.get(key) || "").trim();
         if (value) filters[key] = value;
       }
